@@ -1,0 +1,9 @@
+{
+    "Name" : "{{ Name }}",
+    "Description" : "{{ Description }}",
+    "Version" : "{{ Version }}",
+    "Cmd" : "/usr/bin/python main.py",
+    "Env" : { },
+    "Input" : { },
+    "Output" : { }
+}
