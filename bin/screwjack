@@ -1,0 +1,298 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""A command line tool for manipulating docker modules.
+"""
+
+import click
+import json
+import os
+import re
+import sys
+from collections import OrderedDict
+from itertools import izip, chain
+
+try:
+    import screwjack
+except:
+    sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
+    import screwjack
+
+def gettype(name):
+    type_map = {
+        "string" : "str",
+        "integer" : "int",
+        "float" : "float"
+    }
+    if name not in type_map:
+        raise ValueError(name)
+    name = type_map[name]
+    t = getattr(__builtins__, name)
+    if isinstance(t, type):
+        return t
+    raise ValueError(name)
+
+def safe_get_spec_json(ctx):
+    if not ctx.obj.spec_json:
+        print("Could not find 'spec.json' in current directory.")
+        ctx.exit()
+    return ctx.obj.spec_json
+
+def check_docker_image(image_name):
+    from subprocess import Popen, PIPE
+    p = Popen('docker inspect -f "{{ .id }}" %s' % image_name,
+              shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
+    return (p.wait() == 0)
+
+class ZetModule(object):
+    def __init__(self, username, module_home=None):
+        self.module_home = os.path.abspath(module_home or '.')
+        self.username = username
+        sj_filename = os.path.join(module_home, "spec.json")
+        if not os.path.isfile(sj_filename):
+            self.spec_json = None
+        else:
+            with open(sj_filename, "r") as sj_in:
+                self.spec_json = json.load(sj_in, object_pairs_hook=OrderedDict)
+
+base_images = ['ubuntu:trusty', 'ubuntu:14.04',
+               'ubuntu:saucy', 'ubuntu:13.10',
+               'ubuntu:raring', 'ubuntu:13.04',
+               'ubuntu:precise', 'ubuntu:12.04',
+               'ubuntu:lucid', 'ubuntu:10.4',
+               'python', 'cdh4']
+
+@click.group()
+@click.option('--username', envvar='DATACANVAS_USERNAME', required=True)
+@click.option('--module-home', envvar="DATACANVAS_MODULE_HOME", default=".")
+@click.pass_context
+def cli(ctx, username, module_home):
+    ctx.obj = ZetModule(username, module_home)
+
+@cli.command(short_help="Create a module.")
+@click.option('--name', prompt="Module Name", required=True)
+@click.option('--description', prompt="Module Description", required=True)
+@click.option('--version', prompt="Module Version",
+              default="0.1")
+@click.option('--cmd', prompt="Module Entry Command",
+              default="/usr/bin/python main.py")
+@click.option('--base-image', prompt="Base Image",
+              type=click.Choice(["ubuntu:precise"]),
+              default="ubuntu:precise")
+def init(name, description, version, cmd, base_image):
+    obj = OrderedDict()
+    obj['Name'] = name
+    obj['Description'] = description
+    obj['Version'] = version
+    obj['Cmd'] = cmd
+    obj['Env'] = {}
+    obj['Input'] = {}
+    obj['Output'] = {}
+    obj['BaseImage'] = base_image
+
+    target_path = obj['Name'].lower()
+    if os.path.exists(target_path):
+        print("Path %s exist, can not create" % target_path)
+        exit(-1)
+
+    # Generate files
+    os.makedirs(target_path)
+
+    from jinja2 import Environment, PackageLoader
+    env = Environment(loader=PackageLoader('screwjack', 'templates'))
+
+    src_templates = ["Dockerfile", "spec.json", "specparser.py", "main.py"]
+
+    for tmpl_file in src_templates:
+        tmpl = env.get_template(tmpl_file)
+        with open(os.path.join(target_path, tmpl_file), "w") as f:
+            f.write(tmpl.render(obj))
+
+    # Show Info
+    print("Sucessfully created '%s'" % target_path)
+
+@cli.command(short_help="Add a series 'Env' parameters to 'spec.json'")
+@click.argument('env_keys', nargs=-1)
+@click.pass_context
+def env_add(ctx, env_keys):
+    data = safe_get_spec_json(ctx)
+    for k in env_keys:
+        data['Env'][k] = { 'default' : '', 'type': 'string' }
+    with open("spec.json", "w") as sj_out:
+        sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+
+@cli.command(short_help="Remove a 'Env' parameter from 'spec.json'")
+@click.argument('env_key', nargs=1)
+@click.pass_context
+def env_del(ctx, env_key):
+
+    data = safe_get_spec_json(ctx)
+    data['Env'].pop(env_key, 0)
+
+    with open("spec.json", "w") as sj_out:
+        sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+
+@cli.command(short_help="Add a series 'Input' parameters to 'spec.json'")
+@click.argument('input_args', nargs=-1)
+@click.pass_context
+def input_add(ctx, input_args):
+    input_keys = input_args[::2]
+    input_vals = input_args[1::2]
+
+    data = safe_get_spec_json(ctx)
+    for k,v in izip(input_keys, input_vals):
+        data['Input'][k] = v
+    with open("spec.json", "w") as sj_out:
+        sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+
+@cli.command(short_help="Remove a 'Input' parameter from 'spec.json'")
+@click.argument('input_key', nargs=1)
+@click.pass_context
+def input_del(ctx, input_key):
+    data = safe_get_spec_json(ctx)
+    data['Input'].pop(input_key, 0)
+
+    with open("spec.json", "w") as sj_out:
+        sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+
+@cli.command(short_help="Add a series 'Output' parameters to 'spec.json'.")
+@click.argument('output_args', nargs=-1)
+@click.pass_context
+def output_add(ctx, output_args):
+    input_keys = output_args[::2]
+    input_vals = output_args[1::2]
+
+    data = safe_get_spec_json(ctx)
+    for k,v in izip(input_keys, input_vals):
+        data['Output'][k] = v
+    with open("spec.json", "w") as sj_out:
+        sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+
+@cli.command(short_help="Remove a 'Output' parameter from 'spec.json'.")
+@click.argument('output_key', nargs=1)
+@click.pass_context
+def output_del(ctx, output_key):
+    data = safe_get_spec_json(ctx)
+    data['Output'].pop(output_key, 0)
+
+    with open("spec.json", "w") as sj_out:
+        sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+
+@cli.command(short_help="Package current module into a tar file.")
+@click.pass_context
+def package(ctx):
+    internal_package()
+
+@cli.command(short_help="Submit current module to spec_server.")
+@click.option('--creator-id', prompt="Spec creator id", required=True,
+              default=1)
+@click.option('--spec-server', prompt="Spec Server URL", required=True,
+              default="http://127.0.0.1:3000/spec/push?creator=1")
+@click.pass_context
+def submit(ctx, creator_id, spec_server):
+    import requests
+    sj = safe_get_spec_json(ctx)
+    filename = "%s-%s.tar" % (sj['Name'].lower(), sj['Version'])
+    if not os.path.exists(filename):
+        internal_package()
+
+    import urlparse
+    r = requests.post(spec_server,
+                      files={'moduletar': open(filename, "rb")})
+    if r.status_code != 200:
+        print("ERROR : Failed to submit")
+        print(r.text)
+        print(spec_server)
+    else:
+        print("Sucessful submit module %s" % filename)
+
+class MyCLI(click.MultiCommand):
+    def list_commands(self, ctx):
+        rv = ['local', 'docker']
+        rv.sort()
+        return rv
+
+    def get_command(self, ctx, name):
+        spec_json = safe_get_spec_json(ctx)
+
+        ns = {}
+        params = []
+
+        for k,v in spec_json['Env'].iteritems():
+            params.append(click.Option(("--env-%s" % k, ), prompt="Env '%s'"%k, default=v['default'], type=gettype(v['type']), help="Env(%s)" % v['type']))
+        for k,v in spec_json['Input'].iteritems():
+            params.append(click.Option(("--%s" % k, ), prompt="Input '%s'"%k, help="Input"))
+        for k,v in spec_json['Output'].iteritems():
+            params.append(click.Option(("--%s" % k, ), prompt="Output '%s'"%k, help="Output"))
+
+        @click.pass_context
+        def run_callback(ctx, *args, **kwargs):
+            spec_json = safe_get_spec_json(ctx)
+            
+            # split params into two groups
+            env_params = {re.sub(r'^env_(.*)', r'ZETENV_\1', k):v for k,v in kwargs.viewitems() if re.match(r'^env_(.*)', k)}
+            io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^env_(.*)', k)}
+            env_params_str = " ".join(["%s=%s" % (k,v) for k,v in env_params.viewitems()])
+            io_params_str = " ".join(["%s=%s" % (k,v) for k,v in io_params.viewitems()])
+            
+            # Build command to execute
+            print("Running in local...")
+            cmd = "%s %s %s" % (env_params_str, spec_json['Cmd'], io_params_str)
+            print("Executing : '%s'" % cmd)
+            os.system(cmd)
+
+        @click.pass_context
+        def docker_callback(ctx, *args, **kwargs):
+            spec_json = safe_get_spec_json(ctx)
+            
+            # split params into two groups
+            env_params = {re.sub(r'^env_(.*)', r'ZETENV_\1', k):v for k,v in kwargs.viewitems() if re.match(r'^env_(.*)', k)}
+            io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^env_(.*)', k)}
+            env_params_str = " ".join(["-e %s=%s" % (k,v) for k,v in env_params.viewitems()])
+            io_params_str = " ".join(["%s=%s" % (k,v) for k,v in io_params.viewitems()])
+            module_path = "%s/%s" % (ctx.obj.username, spec_json['Name'].lower())
+
+            if not check_docker_image(module_path):
+                print("ERROR : Can not find image, ")
+                print("        please use 'docker build -t %s .'")
+                print("to build your image first." % module_path)
+                ctx.exit()
+            else:
+                print("Module '%s' found" % module_path)
+
+            # Build command to execute
+            print("Running in docker...")
+            cmd = "docker run -i -w=/home/run %s -t %s %s %s" % (env_params_str, module_path, spec_json['Cmd'], io_params_str)
+            print("Executing : '%s'" % cmd)
+            os.system(cmd)
+
+        if name == "local":
+            return click.Command(name, params=params, callback=run_callback)
+        elif name == "docker":
+            return click.Command(name, params=params, callback=docker_callback)
+        else:
+            return None
+
+@cli.command(cls=MyCLI, short_help="Run module in local/docker mode")
+@click.pass_context
+def run(ctx, *args, **kvargs):
+    pass
+
+def internal_package():
+    import re
+    files = [i[0][0] for i in [re.findall(r'^ADD (.*) (.*)$', line)
+                               for line in open("Dockerfile")]
+             if len(i) > 0]
+    files.append("Dockerfile")
+
+    with open("spec.json", "r") as sj:
+        sj = json.load(sj, object_pairs_hook=OrderedDict)
+    filename = "%s-%s.tar" % (sj['Name'].lower(), sj['Version'])
+
+    print("Packaging files: %s into '%s'" % (files, filename))
+    import tarfile
+    with tarfile.open(filename, "w") as tar:
+        for name in files:
+            tar.add(name)
+
+if __name__ == "__main__":
+    cli()
