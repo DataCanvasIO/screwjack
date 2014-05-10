@@ -254,7 +254,7 @@ class MyCLI(click.MultiCommand):
             if not check_docker_image(module_path):
                 print("ERROR : Can not find image, ")
                 print("        please use 'docker build -t %s .'" % module_path)
-                print("to build your image first.")
+                print("        to build your image first.")
                 ctx.exit()
             else:
                 print("Module '%s' found" % module_path)
