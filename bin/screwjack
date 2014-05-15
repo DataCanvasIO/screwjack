@@ -54,7 +54,7 @@ class ZetModule(object):
             with open(sj_filename, "r") as sj_in:
                 self.spec_json = json.load(sj_in, object_pairs_hook=OrderedDict)
 
-base_images = ['zetdata/ubuntu:trusty', 'zetdata/uubuntu:14.04',
+base_images = ['zetdata/ubuntu:trusty', 'zetdata/ubuntu:14.04',
                'zetdata/ubuntu:saucy', 'zetdata/ubuntu:13.10',
                'zetdata/ubuntu:raring', 'zetdata/ubuntu:13.04',
                'zetdata/ubuntu:precise', 'zetdata/ubuntu:12.04',
@@ -76,7 +76,7 @@ def cli(ctx, username, module_home):
 @click.option('--cmd', prompt="Module Entry Command",
               default="/usr/bin/python main.py")
 @click.option('--base-image', prompt="Base Image",
-              type=click.Choice(["ubuntu:precise"]),
+              type=click.Choice(base_images),
               default="zetdata/ubuntu:trusty")
 def init(name, description, version, cmd, base_image):
     obj = OrderedDict()
