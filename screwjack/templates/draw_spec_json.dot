@@ -1,0 +1,37 @@
+
+digraph G {
+    rankdir=LR;
+    "module" [
+        style = "filled, bold"
+        penwidth = 5
+        fillcolor = "white"
+        fontname = "Courier New"
+        shape = "Mrecord"
+        label =<
+        <table border="0" cellborder="0" cellpadding="3" bgcolor="white">
+        <tr><td bgcolor="black" align="center" colspan="2"><font color="white">{{ Name }}</font></td></tr>
+        <tr><td colspan="2">{{ Description|e }}</td></tr>
+        {% for ekey,val in Env.viewitems() %}
+            <tr><td align="left">{{ ekey }}({{ val.type }}) [ {{ val.default }} ]</td></tr>
+        {% endfor %}
+        </table>
+        >
+        ];
+
+    {% for ikey,itype in Input.viewitems() %}
+        "{{ ikey }}" [ label = " {{ ikey }} ( {{ itype }} ) " ];
+    {% endfor %}
+
+    {% for okey,otype in Output.viewitems() %}
+        "{{ okey }}" [ label = " {{ okey }} ( {{ otype }} ) " ];
+    {% endfor %}
+
+
+    {% for ikey,itype in Input.viewitems() %}
+        {{ ikey }} -> module;
+    {% endfor %}
+
+    {% for okey,otype in Output.viewitems() %}
+        module -> {{ okey }};
+    {% endfor %}
+}

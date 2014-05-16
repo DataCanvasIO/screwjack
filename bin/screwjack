@@ -273,6 +273,15 @@ class MyCLI(click.MultiCommand):
         else:
             return None
 
+@cli.command(short_help="Render current 'spec.json' to a graphviz file")
+def draw():
+    with open("spec.json", "r") as jf:
+        spec_json = json.load(jf)
+    from jinja2 import Environment, PackageLoader
+    env = Environment(loader=PackageLoader('screwjack', 'templates'))
+    template = env.get_template("draw_spec_json.dot")
+    print(template.render(spec_json))
+
 @cli.command(cls=MyCLI, short_help="Run module in local/docker mode")
 @click.pass_context
 def run(ctx, *args, **kvargs):
