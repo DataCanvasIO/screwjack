@@ -21,7 +21,8 @@ def gettype(name):
     type_map = {
         "string" : "str",
         "integer" : "int",
-        "float" : "float"
+        "float" : "float",
+        "enum" : "str"
     }
     if name not in type_map:
         raise ValueError(name)
