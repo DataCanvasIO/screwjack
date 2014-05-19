@@ -1,3 +1,5 @@
-click
-jinja2
-requests
+click==0.6
+jinja2>=2.7.2
+requests>=2.2.1
+python-dateutil==2.2
+pytz>=2014.3

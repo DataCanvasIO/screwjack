@@ -10,6 +10,11 @@ import re
 import sys
 from collections import OrderedDict
 from itertools import izip, chain
+from dateutil.parser import parse
+from datetime import datetime
+import time
+import commands
+from pytz import UTC
 
 try:
     import screwjack
@@ -228,13 +233,13 @@ class MyCLI(click.MultiCommand):
         @click.pass_context
         def run_callback(ctx, *args, **kwargs):
             spec_json = safe_get_spec_json(ctx)
-            
+
             # split params into two groups
             env_params = {re.sub(r'^env_(.*)', r'ZETENV_\1', k):v for k,v in kwargs.viewitems() if re.match(r'^env_(.*)', k)}
             io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^env_(.*)', k)}
             env_params_str = " ".join(["%s=%s" % (k,v) for k,v in env_params.viewitems()])
             io_params_str = " ".join(["%s=%s" % (k,v) for k,v in io_params.viewitems()])
-            
+
             # Build command to execute
             print("Running in local...")
             cmd = "%s %s %s" % (env_params_str, spec_json['Cmd'], io_params_str)
@@ -243,8 +248,9 @@ class MyCLI(click.MultiCommand):
 
         @click.pass_context
         def docker_callback(ctx, *args, **kwargs):
+            internal_build(ctx, False)
             spec_json = safe_get_spec_json(ctx)
-            
+
             # split params into two groups
             env_params = {re.sub(r'^env_(.*)', r'ZETENV_\1', k):v for k,v in kwargs.viewitems() if re.match(r'^env_(.*)', k)}
             io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^env_(.*)', k)}
@@ -262,7 +268,7 @@ class MyCLI(click.MultiCommand):
 
             # Build command to execute
             print("Running in docker...")
-            cmd = "docker run -i -w=/home/run %s -t %s %s %s" % (env_params_str, module_path, spec_json['Cmd'], io_params_str)
+            cmd = "docker run -i -v $(pwd):/home/work -w=/home/run %s -t %s %s %s" % (env_params_str, module_path, spec_json['Cmd'], io_params_str)
             print("Executing : '%s'" % cmd)
             os.system(cmd)
 
@@ -281,6 +287,35 @@ def draw():
     env = Environment(loader=PackageLoader('screwjack', 'templates'))
     template = env.get_template("draw_spec_json.dot")
     print(template.render(spec_json))
+
+@cli.command(short_help="Build current image")
+@click.option('--force', is_flag=True, default=False, help='force to rebuild')
+@click.pass_context
+def build(ctx, force):
+    internal_build(ctx, force)
+
+def internal_build(ctx, force):
+    spec_json = safe_get_spec_json(ctx)
+    module_path = "%s/%s" % (ctx.obj.username, spec_json['Name'].lower())
+    img_date = parse(commands.getoutput('docker inspect -f "{{ .created }}" %s' % module_path))
+    modified_files = list(files_in_images(img_date))
+    def _build():
+        build_cmd = 'docker build --no-cache=true -t %s .' % module_path
+        print("Executing: %s" % build_cmd)
+        os.system(build_cmd)
+
+    if force:
+        _build()
+        ctx.exit()
+    if len(modified_files) > 0:
+        print("The following files are modified(against image: '%s'):" % module_path)
+        for fn in modified_files:
+            print(fn)
+        if query_yes_no("Rebuild?"):
+            print("Building")
+            _build()
+    else:
+        print("No need for rebuilding.")
 
 @cli.command(cls=MyCLI, short_help="Run module in local/docker mode")
 @click.pass_context
@@ -303,6 +338,47 @@ def internal_package():
     with tarfile.open(filename, "w") as tar:
         for name in files:
             tar.add(name)
+
+def files_in_images(img_date):
+    for root, dirs, files in os.walk("."):
+        for fn in files:
+            p = os.path.join(root, fn)
+            file_mtime = UTC.localize(datetime.fromtimestamp(os.path.getmtime(p)))
+            if img_date < file_mtime:
+                # print("%s : %s" % (img_date, file_mtime))
+                yield p
+
+def query_yes_no(question, default="yes"):
+    """Ask a yes/no question via raw_input() and return their answer.
+
+    "question" is a string that is presented to the user.
+    "default" is the presumed answer if the user just hits <Enter>.
+        It must be "yes" (the default), "no" or None (meaning
+        an answer is required of the user).
+
+    The "answer" return value is one of "yes" or "no".
+    """
+    valid = {"yes":True,   "y":True,  "ye":True,
+             "no":False,     "n":False}
+    if default == None:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+
+    while True:
+        sys.stdout.write(question + prompt)
+        choice = raw_input().lower()
+        if default is not None and choice == '':
+            return valid[default]
+        elif choice in valid:
+            return valid[choice]
+        else:
+            sys.stdout.write("Please respond with 'yes' or 'no' "\
+                             "(or 'y' or 'n').\n")
 
 if __name__ == "__main__":
     cli()

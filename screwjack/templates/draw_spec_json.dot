@@ -7,6 +7,9 @@ digraph G {
         fillcolor = "white"
         fontname = "Courier New"
         shape = "Mrecord"
+        fixedsized = true
+        width = 9
+        height = 5
         label =<
         <table border="0" cellborder="0" cellpadding="3" bgcolor="white">
         <tr><td bgcolor="black" align="center" colspan="2"><font color="white">{{ Name }}</font></td></tr>

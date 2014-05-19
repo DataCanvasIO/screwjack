@@ -4,13 +4,13 @@ import os
 
 setup(
     name="screwjack",
-    version='0.0.4',
+    version='0.0.5',
     description="ScrewJack is a tiny command line tool for manipulating modules.",
     author="Xiaolin Zhang",
     author_email="leoncamel@gmail.com",
     url="https://github.com/DataCanvasIO/screwjack",
     license='BSD',
-    install_requires=['click==0.6', 'jinja2>=2.7.2', 'requests>=2.2.1'],
+    install_requires=['click==0.6', 'jinja2>=2.7.2', 'requests>=2.2.1', 'python-dateutil==2.2', 'pytz>=2014.3'],
     packages=['screwjack'],
     include_package_data = True,
     package_data = {
