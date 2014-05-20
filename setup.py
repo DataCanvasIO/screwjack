@@ -4,7 +4,7 @@ import os
 
 setup(
     name="screwjack",
-    version='0.0.5',
+    version='0.0.6',
     description="ScrewJack is a tiny command line tool for manipulating modules.",
     author="Xiaolin Zhang",
     author_email="leoncamel@gmail.com",

@@ -297,16 +297,25 @@ def build(ctx, force):
 def internal_build(ctx, force):
     spec_json = safe_get_spec_json(ctx)
     module_path = "%s/%s" % (ctx.obj.username, spec_json['Name'].lower())
-    img_date = parse(commands.getoutput('docker inspect -f "{{ .created }}" %s' % module_path))
-    modified_files = list(files_in_images(img_date))
     def _build():
         build_cmd = 'docker build --no-cache=true -t %s .' % module_path
         print("Executing: %s" % build_cmd)
         os.system(build_cmd)
 
+    img_date_str = commands.getoutput('docker inspect -f "{{ .created }}" %s' % module_path)
+    print(img_date_str)
+    try:
+        img_date = parse(img_date_str)
+    except Exception as e:
+        # No such image
+        print("Image '%s' not found, force to rebuild" % module_path)
+        _build()
+        ctx.exit()
+
     if force:
         _build()
         ctx.exit()
+    modified_files = list(files_in_images(img_date))
     if len(modified_files) > 0:
         print("The following files are modified(against image: '%s'):" % module_path)
         for fn in modified_files:
