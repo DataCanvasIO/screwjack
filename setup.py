@@ -1,10 +1,11 @@
 
 from setuptools import setup, find_packages
 import os
+import screwjack
 
 setup(
     name="screwjack",
-    version='0.0.6',
+    version=screwjack.__version__,
     description="ScrewJack is a tiny command line tool for manipulating modules.",
     author="Xiaolin Zhang",
     author_email="leoncamel@gmail.com",
