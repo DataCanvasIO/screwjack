@@ -15,6 +15,7 @@ from datetime import datetime
 import time
 import commands
 from pytz import UTC
+from ConfigParser import SafeConfigParser
 
 try:
     import screwjack
@@ -390,4 +391,13 @@ def query_yes_no(question, default="yes"):
                              "(or 'y' or 'n').\n")
 
 if __name__ == "__main__":
-    cli()
+    if 'DATACANVAS_USERNAME' in os.environ:
+        cli(default_map={'username' : os.environ['DATACANVAS_USERNAME']})
+    else:
+        cfg = SafeConfigParser()
+        cfg.read(os.path.expanduser("~/.screwjack.cfg"))
+        if cfg.has_section('user') and cfg.has_option('user', 'username'):
+            cli(default_map={'username' : cfg.get('user', 'username')})
+        else:
+            cli()
+
