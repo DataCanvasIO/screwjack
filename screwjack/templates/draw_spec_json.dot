@@ -14,7 +14,7 @@ digraph G {
         <table border="0" cellborder="0" cellpadding="3" bgcolor="white">
         <tr><td bgcolor="black" align="center" colspan="2"><font color="white">{{ Name }}</font></td></tr>
         <tr><td colspan="2">{{ Description|e }}</td></tr>
-        {% for ekey,val in Env.viewitems() %}
+        {% for ekey,val in Param.viewitems() %}
             <tr><td align="left">{{ ekey }}({{ val.type }}) [ {{ val.default }} ]</td></tr>
         {% endfor %}
         </table>

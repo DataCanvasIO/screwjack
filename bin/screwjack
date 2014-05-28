@@ -28,7 +28,8 @@ def gettype(name):
         "string" : "str",
         "integer" : "int",
         "float" : "float",
-        "enum" : "str"
+        "enum" : "str",
+        "file" : "str"
     }
     if name not in type_map:
         raise ValueError(name)
@@ -51,9 +52,10 @@ def check_docker_image(image_name):
     return (p.wait() == 0)
 
 class ZetModule(object):
-    def __init__(self, username, module_home=None):
+    def __init__(self, username, module_home=None, keep_files=False):
         self.module_home = os.path.abspath(module_home or '.')
         self.username = username
+        self.keep_files = keep_files
         sj_filename = os.path.join(module_home, "spec.json")
         if not os.path.isfile(sj_filename):
             self.spec_json = None
@@ -68,12 +70,15 @@ base_images = ['zetdata/ubuntu:trusty', 'zetdata/ubuntu:14.04',
                'zetdata/ubuntu:lucid', 'zetdata/ubuntu:10.4',
                'zetdata/sci-python:2.7', 'zetdata/cdh:4']
 
+param_types = ['integer', 'enum', 'float', 'string', 'file']
+
 @click.group()
 @click.option('--username', envvar='DATACANVAS_USERNAME', required=True)
 @click.option('--module-home', envvar="DATACANVAS_MODULE_HOME", default=".")
+@click.option('--keep-files', envvar='DATACANVAS_KEEP_FILES', default=False)
 @click.pass_context
-def cli(ctx, username, module_home):
-    ctx.obj = ZetModule(username, module_home)
+def cli(ctx, username, module_home, keep_files):
+    ctx.obj = ZetModule(username, module_home, keep_files)
 
 @cli.command(short_help="Create a module.")
 @click.option('--name', prompt="Module Name", required=True)
@@ -91,7 +96,7 @@ def init(name, description, version, cmd, base_image):
     obj['Description'] = description
     obj['Version'] = version
     obj['Cmd'] = cmd
-    obj['Env'] = {}
+    obj['Param'] = {}
     obj['Input'] = {}
     obj['Output'] = {}
     obj['BaseImage'] = base_image
@@ -117,23 +122,24 @@ def init(name, description, version, cmd, base_image):
     # Show Info
     print("Sucessfully created '%s'" % target_path)
 
-@cli.command(short_help="Add a series 'Env' parameters to 'spec.json'")
-@click.argument('env_keys', nargs=-1)
+@cli.command(short_help="Add a 'Param' to 'spec.json'")
+@click.argument('param_keys', nargs=-1)
+@click.option('-t', prompt="Type", type=click.Choice(param_types), default="string")
 @click.pass_context
-def env_add(ctx, env_keys):
+def param_add(ctx, param_keys, t):
     data = safe_get_spec_json(ctx)
-    for k in env_keys:
-        data['Env'][k] = { 'default' : '', 'type': 'string' }
+    for k in param_keys:
+        data['Param'][k] = { 'Default' : '', 'Type': t }
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
 
-@cli.command(short_help="Remove a 'Env' parameter from 'spec.json'")
-@click.argument('env_key', nargs=1)
+@cli.command(short_help="Remove a 'Param' from 'spec.json'")
+@click.argument('param_key', nargs=1)
 @click.pass_context
-def env_del(ctx, env_key):
+def param_del(ctx, param_key):
 
     data = safe_get_spec_json(ctx)
-    data['Env'].pop(env_key, 0)
+    data['Param'].pop(param_key, 0)
 
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
@@ -147,7 +153,7 @@ def input_add(ctx, input_args):
 
     data = safe_get_spec_json(ctx)
     for k,v in izip(input_keys, input_vals):
-        data['Input'][k] = v
+        data['Input'][k] = [v]
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
 
@@ -170,7 +176,7 @@ def output_add(ctx, output_args):
 
     data = safe_get_spec_json(ctx)
     for k,v in izip(input_keys, input_vals):
-        data['Output'][k] = v
+        data['Output'][k] = [v]
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
 
@@ -224,28 +230,61 @@ class MyCLI(click.MultiCommand):
         ns = {}
         params = []
 
-        for k,v in spec_json['Env'].iteritems():
-            params.append(click.Option(("--env-%s" % k, ), prompt="Env '%s'"%k, default=v['default'], type=gettype(v['type']), help="Env(%s)" % v['type']))
+        for k,v in spec_json['Param'].iteritems():
+            params.append(click.Option(("--param-%s" % k, ), prompt="Param '%s'"%k, default=v['Default'], type=gettype(v['Type']), help="Param(%s)" % v['Type']))
         for k,v in spec_json['Input'].iteritems():
             params.append(click.Option(("--%s" % k, ), prompt="Input '%s'"%k, help="Input"))
         for k,v in spec_json['Output'].iteritems():
             params.append(click.Option(("--%s" % k, ), prompt="Output '%s'"%k, help="Output"))
+
+        def build_zetrt(kwargs, zetrt_dir="."):
+            param = {re.sub(r'^param_(.*)', r'\1', k):{"Type":"string", "Val":v} for k,v in kwargs.viewitems() if re.match(r'^param_(.*)', k)}
+            dummy_global_param = {
+                    "userName" : {
+                        "Type" : "string",
+                        "Val" : "xiaolin"
+                        },
+                    "userId" : {
+                        "Type" : "string",
+                        "Val" : "123"
+                        },
+                    "jobId" : {
+                        "Type" : "string",
+                        "Val" : "456"
+                        },
+                    "blockId" : {
+                        "Type" : "string",
+                        "Val" : "789"
+                        },
+                    "hue_server" : {
+                        "Type" : "string",
+                        "Val" : "http://192.168.1.20:8888/"
+                        }
+                    }
+            obj = { "PARAM" : param, "GLOBAL_PARAM" : dummy_global_param }
+            import tempfile
+            zetrt_file = tempfile.NamedTemporaryFile(mode="w+", suffix=".json", prefix="./zetrt_tmp_", dir=zetrt_dir, delete=False)
+            zetrt_file.write(json.dumps(obj, indent=4, separators=(',', ': ')))
+            zetrt_file.close()
+            return zetrt_file
 
         @click.pass_context
         def run_callback(ctx, *args, **kwargs):
             spec_json = safe_get_spec_json(ctx)
 
             # split params into two groups
-            env_params = {re.sub(r'^env_(.*)', r'ZETENV_\1', k):v for k,v in kwargs.viewitems() if re.match(r'^env_(.*)', k)}
-            io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^env_(.*)', k)}
-            env_params_str = " ".join(["%s=%s" % (k,v) for k,v in env_params.viewitems()])
+            io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^param_(.*)', k)}
             io_params_str = " ".join(["%s=%s" % (k,v) for k,v in io_params.viewitems()])
+            zetrt_file = build_zetrt(kwargs)
 
             # Build command to execute
             print("Running in local...")
-            cmd = "%s %s %s" % (env_params_str, spec_json['Cmd'], io_params_str)
+            cmd = "ZETRT=%s %s %s" % (zetrt_file.name, spec_json['Cmd'], io_params_str)
             print("Executing : '%s'" % cmd)
-            os.system(cmd)
+            ret = os.system(cmd)
+            if not ctx.obj.keep_files:
+                os.remove(zetrt_file.name)
+            sys.exit(ret)
 
         @click.pass_context
         def docker_callback(ctx, *args, **kwargs):
@@ -253,10 +292,10 @@ class MyCLI(click.MultiCommand):
             spec_json = safe_get_spec_json(ctx)
 
             # split params into two groups
-            env_params = {re.sub(r'^env_(.*)', r'ZETENV_\1', k):v for k,v in kwargs.viewitems() if re.match(r'^env_(.*)', k)}
-            io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^env_(.*)', k)}
-            env_params_str = " ".join(["-e %s=%s" % (k,v) for k,v in env_params.viewitems()])
+            io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^param_(.*)', k)}
             io_params_str = " ".join(["%s=%s" % (k,v) for k,v in io_params.viewitems()])
+            zetrt_file = build_zetrt(kwargs)
+            zetrt_docker_filename = os.path.join("/home/work/", os.path.relpath(zetrt_file.name))
             module_path = "%s/%s" % (ctx.obj.username, spec_json['Name'].lower())
 
             if not check_docker_image(module_path):
@@ -269,9 +308,12 @@ class MyCLI(click.MultiCommand):
 
             # Build command to execute
             print("Running in docker...")
-            cmd = "docker run -i -v $(pwd):/home/work -w=/home/run %s -t %s %s %s" % (env_params_str, module_path, spec_json['Cmd'], io_params_str)
+            cmd = "docker run -i -v $(pwd):/home/work -w=/home/run -e ZETRT=%s -t %s %s %s" % (zetrt_docker_filename, module_path, spec_json['Cmd'], io_params_str)
             print("Executing : '%s'" % cmd)
-            os.system(cmd)
+            ret = os.system(cmd)
+            if not ctx.obj.keep_files:
+                os.remove(zetrt_file.name)
+            sys.exit(ret)
 
         if name == "local":
             return click.Command(name, params=params, callback=run_callback)
@@ -285,8 +327,8 @@ def draw():
     with open("spec.json", "r") as jf:
         spec_json = json.load(jf)
     from jinja2 import Environment, PackageLoader
-    env = Environment(loader=PackageLoader('screwjack', 'templates'))
-    template = env.get_template("draw_spec_json.dot")
+    jinja2_env = Environment(loader=PackageLoader('screwjack', 'templates'))
+    template = jinja2_env.get_template("draw_spec_json.dot")
     print(template.render(spec_json))
 
 @cli.command(short_help="Build current image")
@@ -301,7 +343,9 @@ def internal_build(ctx, force):
     def _build():
         build_cmd = 'docker build --no-cache=true -t %s .' % module_path
         print("Executing: %s" % build_cmd)
-        os.system(build_cmd)
+        if os.system(build_cmd) != 0:
+            print("Failed to build '%s'" % module_path)
+            sys.exit(-1)
 
     img_date_str = commands.getoutput('docker inspect -f "{{ .created }}" %s' % module_path)
     print(img_date_str)

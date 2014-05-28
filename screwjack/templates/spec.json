@@ -3,7 +3,7 @@
     "Description" : "{{ Description }}",
     "Version" : "{{ Version }}",
     "Cmd" : "/usr/bin/python main.py",
-    "Env" : { },
+    "Param" : { },
     "Input" : { },
     "Output" : { }
 }

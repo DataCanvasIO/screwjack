@@ -47,18 +47,18 @@ cd your_module_name
 screwjack --help
 ```
 
-### Add/Remove a 'Env' parameter to 'spec.json'
+### Add/Remove a 'Param' to 'spec.json'
 
-Add a series of env parameters:
+Add a series of 'Param's:
 
 ```
-screwjack env_add your_env_parameter_name another_env_parameter
+screwjack param_add your_param_name another_param_name
 ```
 
 Remove a parameter:
 
 ```
-screwjack env_del your_env_parameter_name
+screwjack param_del your_param_name
 ```
 
 ### Add/Remove a 'Input'/'Output' parameter to 'spec.json'
@@ -66,13 +66,13 @@ screwjack env_del your_env_parameter_name
 Add a series of 'Input'/'Output' parameters:
 
 ```
-screwjack input_add your_env_parameter_name another_env_parameter
+screwjack input_add your_input_name your_input_type
 ```
 
 Remove a 'Input'/'Output' parameter:
 
 ```
-screwjack input_del your_env_parameter_name
+screwjack input_del your_input_name
 ```
 
 ### Run module in local/docker mode
