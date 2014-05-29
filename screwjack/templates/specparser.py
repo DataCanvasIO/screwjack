@@ -60,12 +60,18 @@ def read_whole_file(filename):
     with open(filename, "r") as f:
         return f.read()
 
-class Input(object):
+class Input(str):
+    def __new__(self, x):
+        return str.__new__(self, x)
+
     def __init__(self, x):
         self.x = x
 
     def __repr__(self):
-        return self.x
+        return str(self.x)
+
+    def __str__(self):
+        return str(self.x)
 
     def as_first_line(self):
         with open(self.x, "r") as f:
@@ -82,12 +88,18 @@ class Input(object):
     def val(self):
         return self.as_first_line()
 
-class Output(object):
+class Output(str):
+    def __new__(self, x):
+        return str.__new__(self, x)
+
     def __init__(self, x):
         self.x = x
 
     def __repr__(self):
-        return self.x
+        return str(self.x)
+
+    def __str__(self):
+        return str(self.x)
 
     def as_first_line(self):
         with open(self.x, "r") as f:
@@ -109,16 +121,19 @@ class Output(object):
         with open(self.x, "w+") as f:
             f.write(value)
 
-    def as_file(self, mode="w+"):
-        return open(self.x, mode)
+class Param(str):
+    def __new__(self, x, typeinfo):
+        return str.__new__(self, x)
 
-class Param(object):
     def __init__(self, x, typeinfo):
         self._x = x
         self._typeinfo = typeinfo
 
     def __repr__(self):
-        return self._x
+        return str(self._x)
+
+    def __str__(self):
+        return str(self._x)
 
     @property
     def val(self):
@@ -334,6 +349,9 @@ if __name__ == "__main__":
     # print(o.val)
     # o.val = "cacaca"
     # settings = get_settings_from_file("spec.json")
-    hive_runtime = HiveRuntime()
-    print(hive_runtime)
+    # hive_runtime = HiveRuntime()
+    # print(hive_runtime)
+
+    param = Param("hoho", "integer")
+    print(param)
 
