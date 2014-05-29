@@ -39,6 +39,7 @@ import json
 from collections import namedtuple
 import types
 import os
+import sys
 import itertools
 
 def gettype(name):
@@ -226,33 +227,36 @@ class ZetRuntime(object):
 class HiveRuntime(ZetRuntime):
     def get_hdfs_working_dir(self, path=""):
         ps = self.settings
-        prj_vars = ps.GlobalParam
-        return os.path.join(ps.Param.hdfs_root.val, 'tmp/zetjob', prj_vars['userName'], "job%s" % prj_vars['jobId'], "blk%s" % prj_vars['blockId'])
+        glb_vars = ps.GlobalParam
+        return os.path.join(ps.Param.hdfs_root.val, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'])
 
     def get_hive_namespace(self):
         ps = self.settings
-        prj_vars = ps.GlobalParam
-        return "zetjob_%s_job%s_blk%s" % (prj_vars['userName'], prj_vars['jobId'], prj_vars['blockId'])
+        glb_vars = ps.GlobalParam
+        return "zetjob_%s_job%s_blk%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'])
 
-    def hdfs_uploader(self, local_dir):
+    def hdfs_upload_dir(self, local_dir):
         hdfs_upload_dir = self.get_hdfs_working_dir(local_dir)
         ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
         for f in ext_files:
             f_remote = os.path.join(hdfs_upload_dir, local_dir, f)
             f_remote_dir = os.path.dirname(f_remote)
-            if os.system("hadoop fs -mkdir -p %s" % f_remote_dir) != 0:
+            if cmd("hadoop fs -mkdir -p %s" % f_remote_dir) != 0:
                 raise Exception("Failed to create dir %s" % f_remote_dir)
             print("HDFS Upload :: %s ====> %s" % (f, f_remote))
             print("hadoop fs -copyFromLocal %s %s" % (os.path.join(local_dir, f), os.path.join(f_remote_dir)))
-            if os.system("hadoop fs -copyFromLocal %s %s" % (os.path.join(local_dir, f), f_remote_dir)) == 0:
+            if cmd("hadoop fs -copyFromLocal %s %s" % (os.path.join(local_dir, f), f_remote_dir)) == 0:
                 yield os.path.join(f_remote)
             else:
                 raise Exception("Failed to upload file %s to %s" % (f, f_remote))
 
+    def files_uploader(self, local_dir):
+        return self.hdfs_upload_dir(local_dir)
+
     def hive_output_builder(self, output_name):
         ps = self.settings
-        prj_vars = ps.GlobalParam
-        return "zetjob_%s_job%s_blk%s" % (prj_vars['userName'], prj_vars['jobId'], prj_vars['blockId'])
+        glb_vars = ps.GlobalParam
+        return "zetjob_%s_job%s_blk%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'])
 
     def header_builder(self, hive_ns, uploaded_files, uploaded_jars):
         # Build Output Tables
@@ -268,20 +272,24 @@ class HiveRuntime(ZetRuntime):
                     ["set hivevar:INPUT_%s = %s;" % (k,v.val) for k,v in self.settings.Input._asdict().items()],
                     ["set hivevar:OUTPUT_%s = %s;" % (k,v.val) for k,v in self.settings.Output._asdict().items()]))
 
-    def generate_script(self, hive_script, target_filename=None):
+    def clean_hdfs_working_dir(self):
         hdfs_working_dir = self.get_hdfs_working_dir()
         if not clean_hdfs_path(hdfs_working_dir):
             # TODO : refactor to 'HiveException'
             raise Exception("Can not clean hdfs path : %s" % hdfs_working_dir)
 
+    def clean_working_dir(self):
+        self.clean_hdfs_working_dir()
+
+    def generate_script(self, hive_script, target_filename=None):
         hive_ns = self.get_hive_namespace()
 
         # Upload files and UDF jars
         file_dir = self.settings.Param.FILE_DIR
         jar_dir = self.settings.Param.UDF_DIR
 
-        uploaded_files = self.hdfs_uploader(file_dir.val)
-        uploaded_jars = self.hdfs_uploader(jar_dir.val)
+        uploaded_files = self.files_uploader(file_dir.val)
+        uploaded_jars = self.files_uploader(jar_dir.val)
 
         # Build Input, Output and Param
         header = self.header_builder(hive_ns, uploaded_files, uploaded_jars)
@@ -306,11 +314,61 @@ class HiveRuntime(ZetRuntime):
         return target_filename
 
     def execute(self, hive_script, generated_hive_script=None):
+        self.clean_working_dir()
         generated_hive_script = self.generate_script(hive_script, generated_hive_script)
 
-        if os.system("beeline -u jdbc:hive2://%s:%s -n hive -p tiger -d org.apache.hive.jdbc.HiveDriver -f '%s' --verbose=true "
-                % (generated_hive_script, self.settings.Param.HiveServer2_Host, self.settings.Param.HiveServer2_Port)) == 0:
+        if cmd("beeline -u jdbc:hive2://%s:%s -n hive -p tiger -d org.apache.hive.jdbc.HiveDriver -f '%s' --verbose=true "
+                % (self.settings.Param.HiveServer2_Host, self.settings.Param.HiveServer2_Port, generated_hive_script)) == 0:
             raise Exception("Failed to execute hive script : %s" % generated_hive_script)
+
+class EmrHiveRuntime(HiveRuntime):
+    def __init__(self, spec_filename="spec.json"):
+        import boto
+        super(HiveRuntime, self).__init__(spec_filename)
+        p = self.settings.Param
+        self.s3_conn = boto.connect_s3(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET)
+        self.s3_bucket = self.s3_conn.get_bucket(p.S3_BUCKET)
+
+    def get_s3_working_dir(self, path=""):
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+        return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'])
+
+    def s3_upload_dir(self, local_dir):
+        print("EmrHiveRuntime.s3_uploader()")
+        print("s3_upload_dir :::: %s" % local_dir)
+        s3_upload_dir = self.get_s3_working_dir(local_dir)
+        ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
+        for f in ext_files:
+            f_local = os.path.join(local_dir, f)
+            f_remote = os.path.join(s3_upload_dir, local_dir, f)
+            f_remote_full = os.path.join("s3://", self.s3_bucket.name, f_remote)
+
+            print("S3 Upload      :: %s ====> %s" % (f_local, s3_upload_dir))
+            print("S3 remote_full :: %s" % f_remote_full)
+            yield s3_upload(self.s3_bucket, f_remote, f_local)
+
+    def files_uploader(self, local_dir):
+        return self.s3_upload_dir(local_dir)
+
+    def clean_s3_working_dir(self):
+        s3_working_dir = self.get_s3_working_dir()
+        if not s3_delete(self.s3_bucket, s3_working_dir):
+            # TODO : refactor to 'HiveException'
+            raise Exception("Can not clean s3 path : %s" % s3_working_dir)
+
+    def clean_working_dir(self):
+        self.clean_s3_working_dir()
+
+    def execute(self, main_hive_script, generated_hive_script=None):
+        self.clean_working_dir()
+        hive_script_local = self.generate_script(main_hive_script, generated_hive_script)
+
+        s3_working_dir = self.get_s3_working_dir()
+        hive_script_remote = os.path.join(s3_working_dir, os.path.basename(hive_script_local))
+        hive_script_remote_full = s3_upload(self.s3_bucket, hive_script_remote, hive_script_local)
+        print(hive_script_remote_full)
+        print("EmrHiveRuntime.execute()")
 
 class PigRuntime(object):
     def __init__(self, spec_filename="spec.json"):
@@ -318,10 +376,58 @@ class PigRuntime(object):
 
 # Utility Functions
 def clean_hdfs_path(p):
-    if os.system("hadoop fs -rm -r -f %s && hadoop fs -mkdir -p %s" % (p, p)) == 0:
+    if cmd("hadoop fs -rm -r -f %s && hadoop fs -mkdir -p %s" % (p, p)) == 0:
         return True
     else:
         return False
+
+def percent_cb(complete, total):
+    sys.stdout.write('.')
+    sys.stdout.flush()
+
+def s3_delete(bucket, prefix_path):
+    import boto
+    print("s3_delete %s" % prefix_path)
+    for key in bucket.list(prefix=prefix_path):
+        key.delete()
+    return True
+
+def s3_upload(bucket, remote_filename, local_filename):
+    import boto
+    # max size in bytes before uploading in parts.
+    # between 1 and 5 GB recommended
+    MAX_SIZE = 20 * 1000 * 1000
+    # size of parts when uploading in parts
+    PART_SIZE = 6 * 1000 * 1000
+
+    fn_local = os.path.normpath(local_filename)
+    fn_remote = os.path.normpath(remote_filename)
+    fn_remote_full = os.path.join("s3://", bucket.name, fn_remote)
+
+    filesize = os.path.getsize(local_filename)
+    if filesize > MAX_SIZE:
+        print("Multi-part uploading...")
+        print("From : %s" % fn_local)
+        print("To   : %s" % fn_remote)
+        mp = bucket.initiate_multipart_upload(fn_local)
+        fp = open(sourcepath,'rb')
+        fp_num = 0
+        while (fp.tell() < filesize):
+            fp_num += 1
+            print "uploading part %i" % fp_num
+            mp.upload_part_from_file(fp, fp_num, cb=percent_cb, num_cb=10, size=PART_SIZE) 
+        mp.complete_upload()
+        print("")
+    else:
+        print("Single-part upload...")
+        print("From : %s" % fn_local)
+        print("To   : %s" % fn_remote)
+        k = boto.s3.key.Key(bucket)
+        k.key = fn_remote
+        k.set_contents_from_filename(fn_local, cb=percent_cb, num_cb=10)
+        print("")
+
+    return fn_remote_full
 
 def cmd(cmd_str):
     print(cmd_str)
@@ -352,6 +458,6 @@ if __name__ == "__main__":
     # hive_runtime = HiveRuntime()
     # print(hive_runtime)
 
-    param = Param("hoho", "integer")
-    print(param)
+    emr_hive_runtime = EmrHiveRuntime()
+    emr_hive_runtime.execute()
 
