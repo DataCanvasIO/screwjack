@@ -40,6 +40,7 @@ from collections import namedtuple
 import types
 import os
 import sys
+import time
 import itertools
 
 def gettype(name):
@@ -256,7 +257,7 @@ class HiveRuntime(ZetRuntime):
     def hive_output_builder(self, output_name):
         ps = self.settings
         glb_vars = ps.GlobalParam
-        return "zetjob_%s_job%s_blk%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'])
+        return "zetjob_%s_job%s_blk%s_%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'], output_name)
 
     def header_builder(self, hive_ns, uploaded_files, uploaded_jars):
         # Build Output Tables
@@ -324,12 +325,24 @@ class HiveRuntime(ZetRuntime):
 class EmrHiveRuntime(HiveRuntime):
     def __init__(self, spec_filename="spec.json"):
         import boto
+        from boto.emr.connection import EmrConnection, RegionInfo
+
         super(HiveRuntime, self).__init__(spec_filename)
         p = self.settings.Param
         self.s3_conn = boto.connect_s3(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET)
         self.s3_bucket = self.s3_conn.get_bucket(p.S3_BUCKET)
+        self.region = p.AWS_Region
+        self.emr_conn = EmrConnection(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET,
+                region = RegionInfo(name = self.region,
+                    endpoint = self.region + '.elasticmapreduce.amazonaws.com'))
+        self.job_flow_id = p.EMR_jobFlowId
 
     def get_s3_working_dir(self, path=""):
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+        return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'])
+
+    def get_emr_job_name(self):
         ps = self.settings
         glb_vars = ps.GlobalParam
         return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'])
@@ -360,6 +373,22 @@ class EmrHiveRuntime(HiveRuntime):
     def clean_working_dir(self):
         self.clean_s3_working_dir()
 
+    def emr_execute_hive(self, s3_hive_script):
+        from boto.emr.step import HiveStep
+        hive_step = HiveStep(name=self.get_emr_job_name(), hive_file=s3_hive_script)
+        self.emr_conn.add_jobflow_steps(self.job_flow_id, steps=[hive_step])
+        blocking_states = ['STARTING', 'BOOTSTRAPPING', 'RUNNING']
+        cnt = 60 * 60 * 1 # 1 hour
+        time.sleep(10)
+        while cnt > 0:
+            jf_state = self.emr_conn.describe_jobflow(self.job_flow_id).state
+            print("jobflow_state = %s" % jf_state)
+            if jf_state not in blocking_states:
+                print("Job done or failed, continue...")
+                break
+            cnt = cnt - 1
+            time.sleep(10)
+
     def execute(self, main_hive_script, generated_hive_script=None):
         self.clean_working_dir()
         hive_script_local = self.generate_script(main_hive_script, generated_hive_script)
@@ -369,6 +398,7 @@ class EmrHiveRuntime(HiveRuntime):
         hive_script_remote_full = s3_upload(self.s3_bucket, hive_script_remote, hive_script_local)
         print(hive_script_remote_full)
         print("EmrHiveRuntime.execute()")
+        self.emr_execute_hive(hive_script_remote_full)
 
 class PigRuntime(object):
     def __init__(self, spec_filename="spec.json"):
