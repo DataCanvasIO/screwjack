@@ -229,7 +229,7 @@ class HiveRuntime(ZetRuntime):
     def get_hdfs_working_dir(self, path=""):
         ps = self.settings
         glb_vars = ps.GlobalParam
-        return os.path.join(ps.Param.hdfs_root.val, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'])
+        return os.path.join(ps.Param.hdfs_root.val, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
 
     def get_hive_namespace(self):
         ps = self.settings
@@ -286,11 +286,17 @@ class HiveRuntime(ZetRuntime):
         hive_ns = self.get_hive_namespace()
 
         # Upload files and UDF jars
-        file_dir = self.settings.Param.FILE_DIR
-        jar_dir = self.settings.Param.UDF_DIR
+        if 'FILE_DIR' in self.settings.Param._asdict():
+            file_dir = self.settings.Param.FILE_DIR
+            uploaded_files = self.files_uploader(file_dir.val)
+        else:
+            uploaded_files = []
 
-        uploaded_files = self.files_uploader(file_dir.val)
-        uploaded_jars = self.files_uploader(jar_dir.val)
+        if 'UDF_DIR' in self.settings.Param._asdict():
+            jar_dir = self.settings.Param.UDF_DIR
+            uploaded_jars = self.files_uploader(jar_dir.val)
+        else:
+            uploaded_jars = []
 
         # Build Input, Output and Param
         header = self.header_builder(hive_ns, uploaded_files, uploaded_jars)
@@ -340,7 +346,7 @@ class EmrHiveRuntime(HiveRuntime):
     def get_s3_working_dir(self, path=""):
         ps = self.settings
         glb_vars = ps.GlobalParam
-        return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'])
+        return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
 
     def get_emr_job_name(self):
         ps = self.settings
@@ -377,17 +383,7 @@ class EmrHiveRuntime(HiveRuntime):
         from boto.emr.step import HiveStep
         hive_step = HiveStep(name=self.get_emr_job_name(), hive_file=s3_hive_script)
         self.emr_conn.add_jobflow_steps(self.job_flow_id, steps=[hive_step])
-        blocking_states = ['STARTING', 'BOOTSTRAPPING', 'RUNNING']
-        cnt = 60 * 60 * 1 # 1 hour
-        time.sleep(10)
-        while cnt > 0:
-            jf_state = self.emr_conn.describe_jobflow(self.job_flow_id).state
-            print("jobflow_state = %s" % jf_state)
-            if jf_state not in blocking_states:
-                print("Job done or failed, continue...")
-                break
-            cnt = cnt - 1
-            time.sleep(10)
+        emr_wait_job(self.emr_conn, self.job_flow_id)
 
     def execute(self, main_hive_script, generated_hive_script=None):
         self.clean_working_dir()
@@ -399,6 +395,43 @@ class EmrHiveRuntime(HiveRuntime):
         print(hive_script_remote_full)
         print("EmrHiveRuntime.execute()")
         self.emr_execute_hive(hive_script_remote_full)
+
+class EmrJarRuntime(ZetRuntime):
+    def __init__(self, spec_filename="spec.json"):
+        import boto
+        from boto.emr.connection import EmrConnection, RegionInfo
+
+        # super(ZetRuntime, self).__init__()
+        # TODO
+        self.settings = get_settings_from_file(spec_filename)
+
+        p = self.settings.Param
+        self.s3_conn = boto.connect_s3(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET)
+        self.s3_bucket = self.s3_conn.get_bucket(p.S3_BUCKET)
+        self.region = p.AWS_Region
+        self.emr_conn = EmrConnection(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET,
+                region = RegionInfo(name = self.region,
+                    endpoint = self.region + '.elasticmapreduce.amazonaws.com'))
+        self.job_flow_id = p.EMR_jobFlowId
+
+    def get_s3_working_dir(self, path=""):
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+        return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
+
+    def execute(self, jar_path, args):
+        from boto.emr.step import JarStep
+
+        s3_jar_path = s3_upload(self.s3_bucket, self.get_s3_working_dir(jar_path), jar_path)
+        # s3_jar_path = "s3://run-jars/jar/mahout-core-1.0-SNAPSHOT-job.jar"
+        print("Uploading jar to s3 : %s -> %s" % (jar_path, s3_jar_path))
+
+        print("Add jobflow step")
+        step = JarStep(name='cl_filter', jar=s3_jar_path, step_args=args)
+        self.emr_conn.add_jobflow_steps(self.job_flow_id, steps=[step])
+
+        print("Waiting jobflow step done")
+        emr_wait_job(self.emr_conn, self.job_flow_id)
 
 class PigRuntime(object):
     def __init__(self, spec_filename="spec.json"):
@@ -426,7 +459,7 @@ def s3_upload(bucket, remote_filename, local_filename):
     import boto
     # max size in bytes before uploading in parts.
     # between 1 and 5 GB recommended
-    MAX_SIZE = 20 * 1000 * 1000
+    MAX_SIZE = 40 * 1000 * 1000
     # size of parts when uploading in parts
     PART_SIZE = 6 * 1000 * 1000
 
@@ -435,6 +468,7 @@ def s3_upload(bucket, remote_filename, local_filename):
     fn_remote_full = os.path.join("s3://", bucket.name, fn_remote)
 
     filesize = os.path.getsize(local_filename)
+    print("filesize = %d, maxsize = %d" % (filesize, MAX_SIZE))
     if filesize > MAX_SIZE:
         print("Multi-part uploading...")
         print("From : %s" % fn_local)
@@ -458,6 +492,20 @@ def s3_upload(bucket, remote_filename, local_filename):
         print("")
 
     return fn_remote_full
+
+def emr_wait_job(emr_conn, job_flow_id):
+    blocking_states = ['STARTING', 'BOOTSTRAPPING', 'RUNNING']
+    cnt = 60 * 60 * 1 # 1 hour
+    time.sleep(10)
+    while cnt > 0:
+        jf_state = emr_conn.describe_jobflow(job_flow_id).state
+        print("jobflow_state = %s" % jf_state)
+        if jf_state not in blocking_states:
+            print("Job done or failed, continue...")
+            return True
+        cnt = cnt - 1
+        time.sleep(10)
+    return False
 
 def cmd(cmd_str):
     print(cmd_str)
