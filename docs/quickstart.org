@@ -1,0 +1,239 @@
+#+TITLE: Quick Start
+
+You can get screwjack directly from PyPI:
+
+#+BEGIN_SRC bash
+pip install screwjack
+#+END_SRC
+
+* Basic Concepts
+
+Screwjack is a utility for helping module designers compose modules.
+Modules are defined by a file named =spec.json=. Here is the a example
+of =spec.json=:
+
+#+BEGIN_SRC javascript
+  {
+      "Name": "SVM",
+      "Description": "A simple SVM",
+      "Version": "0.1",
+      "Cmd": "/usr/bin/python main.py",
+      "Param": {
+          "C": {
+              "Default": "",
+              "Type": "string"
+          }
+      },
+      "Input": {
+          "X": ["csv"],
+          "Y": ["csv"]
+      },
+      "Output": {
+          "MODEL": ["model.svm"]
+      }
+  }
+#+END_SRC
+
+In short, screwjack is a utility work around =spec.json=. Typically,
+there are 5 steps to write a module. The following tutorial will show
+details steps.
+
+1. Initialize a module
+2. Add Inputs/Outputs/Params
+3. Fill your code implementation
+4. Test module
+   1. Test in *local*
+   2. Test in *docker*
+5. Submit module
+
+* Step 0: Install docker and screwjack
+** Install docker
+A module developing environment need docker. Follow the link to 
+install docker for your linux distribution : http://docs.docker.io/installation/.
+
+After that, don't forget add yourself into 'docker' group. For example, in Ubuntu,
+you can do it like this:
+
+#+BEGIN_SRC bash
+  sudo usermod -aG docker your_linux_username
+#+END_SRC
+
+** Install screwjack
+
+#+BEGIN_SRC bash
+  pip install -U screwjack
+#+END_SRC
+
+** Setup screwjack
+
+Before you using screwjack, you should set your username. You can either set
+environment variable:
+
+#+BEGIN_SRC bash
+   export DATACANVAS_USERNAME=your_username
+#+END_SRC
+
+Or, you can put your username into =$HOME/.screwjack.cfg=:
+
+#+BEGIN_SRC
+  [user]
+  username = your_username
+#+END_SRC
+
+Or, you can add =--username= option for screwjack like following:
+
+#+BEGIN_SRC sh
+  screwjack --username=your_username init
+  screwjack --username=your_username param_add
+  screwjack --username=your_username input_add
+  screwjack --username=your_username output_add
+#+END_SRC
+
+* Step 1: Initialize a module
+
+#+BEGIN_SRC
+  screwjack init --name="SVM" --description="A simple SVM"
+#+END_SRC
+
+Then, it will prompt to setup other options, like the following. In this case,
+we want use scikit-learn, which are packed in base image =zetdata/sci-python:2.7=.
+
+#+BEGIN_SRC
+  Module Version [0.1]: 
+  Module Entry Command [/usr/bin/python main.py]: 
+  Base Image [zetdata/ubuntu:trusty]: zetdata/sci-python:2.7
+  Sucessfully created 'svm'
+#+END_SRC
+
+Or, you can use single command to do this:
+
+#+BEGIN_SRC bash
+  screwjack init --name=SVM --description="A simple SVM" --version="0.1" --cmd="/usr/bin/python main.py" --base-image="zetdata/sci-python:2.7"
+#+END_SRC
+
+Now, we can get a directory with initial verison of basic module:
+
+#+BEGIN_SRC
+  svm
+  |-- Dockerfile
+  |-- main.py
+  |-- spec.json
+  `-- specparser.py
+
+  0 directories, 4 files
+#+END_SRC
+
+We should change to the directory of the new module, the following steps will
+assume we are working at that directory.
+
+#+BEGIN_SRC sh
+  cd svm
+#+END_SRC
+
+* Step 2: Add Input/Output/Param
+
+Image we want create a module with two *Input*s, one *Output*, and one parameter. Just like
+the following diagram shows:
+
+#+begin_src ditaa :file ditaa-simpleboxes-unsep.png :cmdline -E
+          /-----------------\
+          | SVM             |
+  X(csv)  +-----------------+
+--------->|                 |  MODEL(model.svm)
+          | Params:         |------------------->
+          +=================|
+  Y(csv)  | o C(float)      |
+--------->|                 |
+          \-----------------/
+#+end_src
+
+[[./module.png]]
+
+Now we can add a parameter using the following command:
+
+#+BEGIN_SRC bash
+  screwjack param_add C
+#+END_SRC
+
+And, we add two Inputs:
+#+BEGIN_SRC bash
+  screwjack input_add X csv
+  screwjack input_add Y csv
+#+END_SRC
+
+Finally, a Output:
+#+BEGIN_SRC bash
+  screwjack output_add model model.svm
+#+END_SRC
+
+* Step 3: Fill your code implementation
+
+Now, you can write your awesome implementation now:
+
+#+BEGIN_SRC bash
+  vim main.py
+#+END_SRC
+
+If you want add additional files for this module, don't forget add files
+in =Dockerfile=.
+
+#+BEGIN_SRC bash
+  vim Dockerfile
+#+END_SRC
+
+For example, if you have additional file, you should append the following line
+into =Dockerfile=:
+
+#+BEGIN_SRC
+  ADD your_additional_file /home/run/
+#+END_SRC
+
+In the case if you want add additional folder, you should append a line like this:
+
+#+BEGIN_SRC
+  ADD your_additional_folder /home/run/your_additional_folder
+#+END_SRC
+
+For more information about =Dockerfile=, please reference [[http://docs.docker.io/reference/builder/][Dockerfile]].
+
+* Step 4.1: Test in *local*
+
+After write fill code into this module, we might want test it. The =screwjack run=
+subcommands are design for this.
+
+#+BEGIN_SRC bash
+  screwjack run local --help
+#+END_SRC
+
+#+BEGIN_SRC bash
+  Usage: screwjack run local [OPTIONS]
+  Options:
+    --param-C TEXT  Param(string)
+    --X TEXT        Input
+    --Y TEXT        Input
+    --MODEL TEXT    Output
+    --help          Show this message and exit.
+#+END_SRC
+
+Now, we can test our module in local environment, which is very close to your developing
+environment.
+
+#+BEGIN_SRC bash
+  screwjack run local --param-C=0.1 --X=a.csv --Y=b.csv --MODEL=tmp.model
+#+END_SRC
+
+* Step 4.2: Test in *docker*
+
+Then, we can try to execute module by docker:
+
+#+BEGIN_SRC bash
+  screwjack run docker --param-C=0.1 --X=a.csv --Y=b.csv --MODEL=tmp.model
+#+END_SRC
+
+* Step 5: Submit module
+
+You should provide the URL of =spec_server= to submit:
+
+#+BEGIN_SRC bash
+  screwjack submit
+#+END_SRC
