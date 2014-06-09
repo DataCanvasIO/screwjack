@@ -7,6 +7,7 @@ setup(
     name="screwjack",
     version=screwjack.__version__,
     description="ScrewJack is a tiny command line tool for manipulating modules.",
+    long_description="",
     author="Xiaolin Zhang",
     author_email="leoncamel@gmail.com",
     url="https://github.com/DataCanvasIO/screwjack",
@@ -15,7 +16,7 @@ setup(
     packages=['screwjack'],
     include_package_data = True,
     package_data = {
-        '': ['templates/*']
+        '': ['templates/basic/*', 'templates/hive/*', 'templates/pig/*', 'templates/emr_hive/*', 'templates/emr_pig/*']
     },
     scripts=[
         'bin/screwjack'

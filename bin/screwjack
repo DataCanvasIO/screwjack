@@ -51,6 +51,46 @@ def check_docker_image(image_name):
               shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
     return (p.wait() == 0)
 
+def print_spec_json(obj):
+    print("Name         : %s(%s)" % (obj['Name'], obj['Version']))
+    print("CategoryTags : %s" % obj['CategoryTags'])
+    print("Params")
+    for k,v in obj['Param'].items():
+        print("  %s(%s) : '%s'" % (k,v['Type'], v['Default']))
+    print("Inputs")
+    for k,v in obj['Input'].items():
+        print("  %s(%s)" % (k, ",".join(v)))
+    print("Outputs")
+    for k,v in obj['Output'].items():
+        print("  %s(%s)" % (k, ",".join(v)))
+
+def gen_dummy_global_param(username=None):
+    import getpass
+    if not username:
+        username = getpass.getuser()
+    return {
+        "userName" : {
+            "Type" : "string",
+            "Val" : username
+        },
+        "userId" : {
+            "Type" : "string",
+            "Val" : "123"
+        },
+        "jobId" : {
+            "Type" : "string",
+            "Val" : "456"
+        },
+        "blockId" : {
+            "Type" : "string",
+            "Val" : "789"
+        },
+        "hue_server" : {
+            "Type" : "string",
+            "Val" : "http://192.168.1.20:8888/"
+        }
+    }
+
 class ZetModule(object):
     def __init__(self, username, module_home=None, keep_files=False):
         self.module_home = os.path.abspath(module_home or '.')
@@ -72,6 +112,21 @@ base_images = ['zetdata/ubuntu:trusty', 'zetdata/ubuntu:14.04',
 
 param_types = ['integer', 'enum', 'float', 'string', 'file']
 
+def gen_base_image_option(module_type):
+    if module_type == 'basic':
+        default_base_image = "zetdata/ubuntu:trusty"
+    elif module_type == 'hive':
+        default_base_image = "zetdata/cdh:4"
+    elif module_type == 'emr_hive':
+        default_base_image = "zetdata/ubuntu:trusty"
+    else:
+        default_base_image = "zetdata/ubuntu:trusty"
+    
+    return click.Option(('--base-image', '-b'), prompt="Base Image",
+                        type=click.Choice(base_images),
+                        default=default_base_image,
+                        help="Base Image")
+
 @click.group()
 @click.option('--username', envvar='DATACANVAS_USERNAME', required=True)
 @click.option('--module-home', envvar="DATACANVAS_MODULE_HOME", default=".")
@@ -80,82 +135,101 @@ param_types = ['integer', 'enum', 'float', 'string', 'file']
 def cli(ctx, username, module_home, keep_files):
     ctx.obj = ZetModule(username, module_home, keep_files)
 
-@cli.command(short_help="Create a module.")
-@click.option('--name', prompt="Module Name", required=True)
-@click.option('--description', prompt="Module Description", required=True)
-@click.option('--version', prompt="Module Version",
-              default="0.1")
-@click.option('--cmd', prompt="Module Entry Command",
-              default="/usr/bin/python main.py")
-@click.option('--base-image', prompt="Base Image",
-              type=click.Choice(base_images),
-              default="zetdata/ubuntu:trusty")
-def init(name, description, version, cmd, base_image):
-    obj = OrderedDict()
-    obj['Name'] = name
-    obj['Description'] = description
-    obj['Version'] = version
-    obj['Cmd'] = cmd
-    obj['Param'] = {}
-    obj['Input'] = {}
-    obj['Output'] = {}
-    obj['BaseImage'] = base_image
+class InitCLI(click.MultiCommand):
+    def list_commands(self, ctx):
+        rv = ['basic', 'hive', 'pig', 'emr_hive', 'emr_pig']
+        return rv
 
-    target_path = obj['Name'].lower()
-    if os.path.exists(target_path):
-        print("Path %s exist, can not create" % target_path)
-        exit(-1)
+    def get_command(self, ctx, module_type):
 
-    # Generate files
-    os.makedirs(target_path)
+        @click.pass_context
+        def init_callback(ctx, name, description, version, cmd, base_image):
+            print("init %s" % module_type)
+            obj = OrderedDict()
+            obj['Name'] = name
+            obj['Description'] = description
+            obj['Version'] = version
+            obj['Cmd'] = cmd
+            obj['Param'] = {}
+            obj['Input'] = {}
+            obj['Output'] = {}
+            obj['BaseImage'] = base_image
 
-    from jinja2 import Environment, PackageLoader
-    env = Environment(loader=PackageLoader('screwjack', 'templates'))
+            target_path = obj['Name'].lower()
+            if os.path.exists(target_path):
+                print("Path %s exist, can not create" % target_path)
+                exit(-1)
 
-    src_templates = ["Dockerfile", "spec.json", "specparser.py", "main.py"]
+            # Generate files
+            os.makedirs(target_path)
 
-    for tmpl_file in src_templates:
-        tmpl = env.get_template(tmpl_file)
-        with open(os.path.join(target_path, tmpl_file), "w") as f:
-            f.write(tmpl.render(obj))
+            from jinja2 import Environment, PackageLoader
+            env = Environment(loader=PackageLoader('screwjack', 'templates/%s' % module_type))
 
-    # Show Info
-    print("Sucessfully created '%s'" % target_path)
+            for tmpl_file in env.list_templates():
+                target_file = os.path.splitext(tmpl_file)[0]
+                tmpl = env.get_template(tmpl_file)
+                with open(os.path.join(target_path, target_file), "w") as f:
+                    f.write(tmpl.render(obj))
+
+            # Show Info
+            print("Sucessfully created '%s'" % target_path)
+
+        params = [
+            click.Option(('--name','-n'), prompt="Module Name", required=True,
+                         help="Module Name"),
+            click.Option(('--description', '-d'), prompt="Module Description", required=True,
+                         help="Module Description"),
+            click.Option(('--version', '-v'), prompt="Module Version",
+                         default="0.1",
+                         help="Module Version"),
+            click.Option(('--cmd', '-c'), prompt="Module Entry Command",
+                         default="/usr/bin/python main.py",
+                         help="Entry Command"),
+            gen_base_image_option(module_type)
+        ]
+
+        return click.Command(module_type, help="Create a '%s' type of module" % module_type,
+                             params=params, callback=init_callback)
+
+@cli.command(cls=InitCLI, short_help="Run module in local/docker mode")
+@click.pass_context
+def init(ctx, *args, **kvargs):
+    pass
 
 @cli.command(short_help="Add a 'Param' to 'spec.json'")
 @click.argument('param_keys', nargs=-1)
-@click.option('-t', prompt="Type", type=click.Choice(param_types), default="string")
+@click.argument('param_type', nargs=1, required=True)
 @click.pass_context
-def param_add(ctx, param_keys, t):
+def param_add(ctx, param_keys, param_type):
     data = safe_get_spec_json(ctx)
     for k in param_keys:
-        data['Param'][k] = { 'Default' : '', 'Type': t }
+        data['Param'][k] = { 'Default' : '', 'Type': param_type }
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+    print_spec_json(data)
 
 @cli.command(short_help="Remove a 'Param' from 'spec.json'")
 @click.argument('param_key', nargs=1)
 @click.pass_context
 def param_del(ctx, param_key):
-
     data = safe_get_spec_json(ctx)
     data['Param'].pop(param_key, 0)
 
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+    print_spec_json(data)
 
-@cli.command(short_help="Add a series 'Input' parameters to 'spec.json'")
-@click.argument('input_args', nargs=-1)
+@cli.command(short_help="Add a 'Input' parameter to 'spec.json'")
+@click.argument('input_name', nargs=1)
+@click.argument('input_types', nargs=-1, required=True)
 @click.pass_context
-def input_add(ctx, input_args):
-    input_keys = input_args[::2]
-    input_vals = input_args[1::2]
-
+def input_add(ctx, input_name, input_types):
     data = safe_get_spec_json(ctx)
-    for k,v in izip(input_keys, input_vals):
-        data['Input'][k] = [v]
+    data['Input'][input_name] = list(input_types)
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+    print_spec_json(data)
 
 @cli.command(short_help="Remove a 'Input' parameter from 'spec.json'")
 @click.argument('input_key', nargs=1)
@@ -166,19 +240,18 @@ def input_del(ctx, input_key):
 
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+    print_spec_json(data)
 
-@cli.command(short_help="Add a series 'Output' parameters to 'spec.json'.")
-@click.argument('output_args', nargs=-1)
+@cli.command(short_help="Add a 'Output' parameter to 'spec.json'.")
+@click.argument('output_name', nargs=1)
+@click.argument('output_types', nargs=-1, required=True)
 @click.pass_context
-def output_add(ctx, output_args):
-    input_keys = output_args[::2]
-    input_vals = output_args[1::2]
-
+def output_add(ctx, output_name, output_types):
     data = safe_get_spec_json(ctx)
-    for k,v in izip(input_keys, input_vals):
-        data['Output'][k] = [v]
+    data['Output'][output_name] = list(output_types)
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+    print_spec_json(data)
 
 @cli.command(short_help="Remove a 'Output' parameter from 'spec.json'.")
 @click.argument('output_key', nargs=1)
@@ -189,6 +262,7 @@ def output_del(ctx, output_key):
 
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+    print_spec_json(data)
 
 @cli.command(short_help="Package current module into a tar file.")
 @click.pass_context
@@ -218,7 +292,7 @@ def submit(ctx, creator_id, spec_server):
     else:
         print("Sucessful submit module %s" % filename)
 
-class MyCLI(click.MultiCommand):
+class RunCLI(click.MultiCommand):
     def list_commands(self, ctx):
         rv = ['local', 'docker']
         rv.sort()
@@ -239,29 +313,8 @@ class MyCLI(click.MultiCommand):
 
         def build_zetrt(kwargs, zetrt_dir="."):
             param = {re.sub(r'^param_(.*)', r'\1', k):{"Type":"string", "Val":v} for k,v in kwargs.viewitems() if re.match(r'^param_(.*)', k)}
-            dummy_global_param = {
-                    "userName" : {
-                        "Type" : "string",
-                        "Val" : "xiaolin"
-                        },
-                    "userId" : {
-                        "Type" : "string",
-                        "Val" : "123"
-                        },
-                    "jobId" : {
-                        "Type" : "string",
-                        "Val" : "456"
-                        },
-                    "blockId" : {
-                        "Type" : "string",
-                        "Val" : "789"
-                        },
-                    "hue_server" : {
-                        "Type" : "string",
-                        "Val" : "http://192.168.1.20:8888/"
-                        }
-                    }
-            obj = { "PARAM" : param, "GLOBAL_PARAM" : dummy_global_param }
+
+            obj = { "PARAM" : param, "GLOBAL_PARAM" : gen_dummy_global_param()}
             import tempfile
             zetrt_file = tempfile.NamedTemporaryFile(mode="w+", suffix=".json", prefix="./zetrt_tmp_", dir=zetrt_dir, delete=False)
             zetrt_file.write(json.dumps(obj, indent=4, separators=(',', ': ')))
@@ -327,8 +380,8 @@ def draw():
     with open("spec.json", "r") as jf:
         spec_json = json.load(jf)
     from jinja2 import Environment, PackageLoader
-    jinja2_env = Environment(loader=PackageLoader('screwjack', 'templates'))
-    template = jinja2_env.get_template("draw_spec_json.dot")
+    jinja2_env = Environment(loader=PackageLoader('screwjack', 'misc_templates'))
+    template = jinja2_env.get_template("draw_spec_json.dot.j2")
     print(template.render(spec_json))
 
 @cli.command(short_help="Build current image")
@@ -371,7 +424,7 @@ def internal_build(ctx, force):
     else:
         print("No need for rebuilding.")
 
-@cli.command(cls=MyCLI, short_help="Run module in local/docker mode")
+@cli.command(cls=RunCLI, short_help="Run module in local/docker mode")
 @click.pass_context
 def run(ctx, *args, **kvargs):
     pass
@@ -413,7 +466,7 @@ def query_yes_no(question, default="yes"):
     The "answer" return value is one of "yes" or "no".
     """
     valid = {"yes":True,   "y":True,  "ye":True,
-             "no":False,     "n":False}
+             "no":False,   "n":False}
     if default == None:
         prompt = " [y/n] "
     elif default == "yes":
@@ -444,4 +497,3 @@ if __name__ == "__main__":
             cli(default_map={'username' : cfg.get('user', 'username')})
         else:
             cli()
-

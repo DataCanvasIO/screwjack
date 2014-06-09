@@ -1,2 +1,5 @@
-1. Global settings: username, spec_server URL
-2. Add class to parse and manipulate 'Dockerfile'
+[x]. Global settings: username, spec_server URL
+[ ]. Add class to parse and manipulate 'Dockerfile'
+[ ]. Record a quickstart 
+[ ]. Add 'screwjack shell' subcommand
+[ ]. Fix bug for the first time build module
