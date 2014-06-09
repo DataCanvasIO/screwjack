@@ -14,8 +14,7 @@ Can also save bandwith. Of course, you can build your own module from scratch. D
 offers incremental pulling, which will pull differental images from remote registry
 server. So, it may save bandwith and time if we share same base images.
 
-All scripts to build base images are released at
-https://github.com/leoncamel/docker-brew-datacanvas-base, and they are shipped at
+All scripts to build base images are released at [[https://github.com/DataCanvasIO/docker-brew-datacanvas-base][github repo]], and images are pushed to
 [[http://index.docker.com][official docker registry]].
 
 * Hierarchy of base images

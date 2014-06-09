@@ -21,9 +21,10 @@ scratch. Docker offers incremental pulling, which will pull differental
 images from remote registry server. So, it may save bandwith and time if
 we share same base images.
 
-All scripts to build base images are released at
-https://github.com/leoncamel/docker-brew-datacanvas-base, and they are
-shipped at `official docker registry <http://index.docker.com>`__.
+All scripts to build base images are released at `github
+repo <https://github.com/DataCanvasIO/docker-brew-datacanvas-base>`__,
+and images are pushed to `official docker
+registry <http://index.docker.com>`__.
 
 Hierarchy of base images
 ========================
