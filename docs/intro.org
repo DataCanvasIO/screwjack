@@ -1,0 +1,91 @@
+#+TITLE: Introduction
+
+ScrewJack is a tiny command line tool for manipulating modules.
+
+* Basic Concepts
+
+Screwjack is a utility for helping module designers compose modules.
+Modules are defined by a file named =spec.json=. Here is the a example
+of =spec.json=:
+n
+#+BEGIN_SRC javascript
+  {
+      "Name": "SVM",
+      "Description": "A simple SVM",
+      "Version": "0.1",
+      "Cmd": "/usr/bin/python main.py",
+      "Param": {
+          "C": {
+              "Default": "",
+              "Type": "string"
+          }
+      },
+      "Input": {
+          "X": ["csv"],
+          "Y": ["csv"]
+      },
+      "Output": {
+          "MODEL": ["model.svm"]
+      }
+  }
+#+END_SRC
+
+In short, screwjack is a utility work around =spec.json=. Typically,
+there are 5 steps to write a module. The following tutorial will show
+details steps.
+
+1. Initialize a module
+2. Add Inputs/Outputs/Params
+3. Fill your code implementation
+4. Test module
+   1. Test in *local*
+   2. Test in *docker*
+5. Submit module
+
+* Installation
+
+Screwjack will depends on [[http://www.docker.com/][docker]], so you should install docker first.
+
+** Install docker
+A module developing environment need docker. Follow the link to 
+install docker for your linux distribution: http://docs.docker.io/installation/.
+
+After that, don't forget add yourself into 'docker' group. For example, in Ubuntu,
+you can do it like this:
+
+#+BEGIN_SRC bash
+  sudo usermod -aG docker your_linux_username
+#+END_SRC
+
+** Install screwjack
+
+You can get screwjack directly from PyPI:
+
+#+BEGIN_SRC bash
+  pip install -U screwjack
+#+END_SRC
+
+** Setup screwjack
+
+Before you using screwjack, you should set your username. You can either set
+environment variable:
+
+#+BEGIN_SRC bash
+   export DATACANVAS_USERNAME=your_username
+#+END_SRC
+
+Or, you can put your username into =$HOME/.screwjack.cfg=:
+
+#+BEGIN_SRC
+  [user]
+  username = your_username
+#+END_SRC
+
+Or, you can add =--username= option for screwjack like following:
+
+#+BEGIN_SRC sh
+  screwjack --username=your_username init
+  screwjack --username=your_username param_add
+  screwjack --username=your_username input_add
+  screwjack --username=your_username output_add
+#+END_SRC

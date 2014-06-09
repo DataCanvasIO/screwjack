@@ -175,3 +175,13 @@ pseudoxml:
 	$(SPHINXBUILD) -b pseudoxml $(ALLSPHINXOPTS) $(BUILDDIR)/pseudoxml
 	@echo
 	@echo "Build finished. The pseudo-XML files are in $(BUILDDIR)/pseudoxml."
+
+prebuild:
+	pandoc -s -f org -t rst intro.org -o intro.rst
+	pandoc -s -f org -t rst quickstart-basic.org -o quickstart-basic.rst
+	pandoc -s -f org -t rst quickstart-hive.org -o quickstart-hive.rst
+	pandoc -s -f org -t rst init-module-types.org -o init-module-types.rst
+	pandoc -s -f org -t rst init-module-types.org -o init-module-types.rst
+	pandoc -s -f org -t rst base-images.org -o base-images.rst
+	pandoc -s -f org -t rst io-types.org -o io-types.rst
+	pandoc -s -f org -t rst runtime.org -o runtime.rst

@@ -1,115 +1,25 @@
-===========
-Quick Start
-===========
+=====================================
+Getting Started with Screwjack(Basic)
+=====================================
 
-You can get screwjack directly from PyPI:
-
-.. code:: bash
-
-    pip install screwjack
-
-Basic Concepts
-==============
-
-Screwjack is a utility for helping module designers compose modules.
-Modules are defined by a file named ``spec.json``. Here is the a example
-of ``spec.json``:
-
-.. code:: javascript
-
-      {
-          "Name": "SVM",
-          "Description": "A simple SVM",
-          "Version": "0.1",
-          "Cmd": "/usr/bin/python main.py",
-          "Param": {
-              "C": {
-                  "Default": "",
-                  "Type": "string"
-              }
-          },
-          "Input": {
-              "X": ["csv"],
-              "Y": ["csv"]
-          },
-          "Output": {
-              "MODEL": ["model.svm"]
-          }
-      }
-
-In short, screwjack is a utility work around ``spec.json``. Typically,
-there are 5 steps to write a module. The following tutorial will show
-details steps.
-
-#. Initialize a module
-#. Add Inputs/Outputs/Params
-#. Fill your code implementation
-#. Test module
-
-   #. Test in **local**
-   #. Test in **docker**
-
-#. Submit module
-
-Step 0: Install docker and screwjack
-====================================
-
-Install docker
---------------
-
-A module developing environment need docker. Follow the link to install
-docker for your linux distribution :
-http://docs.docker.io/installation/.
-
-After that, don't forget add yourself into 'docker' group. For example,
-in Ubuntu, you can do it like this:
-
-.. code:: bash
-
-      sudo usermod -aG docker your_linux_username
-
-Install screwjack
------------------
-
-.. code:: bash
-
-      pip install -U screwjack
-
-Setup screwjack
----------------
-
-Before you using screwjack, you should set your username. You can either
-set environment variable:
-
-.. code:: bash
-
-       export DATACANVAS_USERNAME=your_username
-
-Or, you can put your username into ``$HOME/.screwjack.cfg``:
-
-::
-
-      [user]
-      username = your_username
-
-Or, you can add ``--username`` option for screwjack like following:
-
-.. code:: bash
-
-      screwjack --username=your_username init
-      screwjack --username=your_username param_add
-      screwjack --username=your_username input_add
-      screwjack --username=your_username output_add
+Before you trying following, you should ensure screwjack is installed.
+Please refer :doc:`Introduction<intro>` for detail installation steps.
 
 Step 1: Initialize a module
 ===========================
 
+First, assume you want create a **basic** module, which is a template
+with basic functinality. If you interested in writing a 'Hive' module,
+please refer to :doc:`Getting Started with Screwjack(Hive)<quickstart-hive>`.
+
+So, you can create a basic module with ``screwjack``:
+
 ::
 
-      screwjack init --name="SVM" --description="A simple SVM"
+      screwjack init basic --name="SVM" --description="A simple SVM"
 
 Then, it will prompt to setup other options, like the following. In this
-case, we want use scikit-learn, which are packed in base image
+tutorial, we will use scikit-learn, which are packed in base image
 ``zetdata/sci-python:2.7``.
 
 ::
@@ -123,9 +33,9 @@ Or, you can use single command to do this:
 
 .. code:: bash
 
-      screwjack init --name=SVM --description="A simple SVM" --version="0.1" --cmd="/usr/bin/python main.py" --base-image="zetdata/sci-python:2.7"
+      screwjack init basic --name=SVM --description="A simple SVM" --version="0.1" --cmd="/usr/bin/python main.py" --base-image="zetdata/sci-python:2.7"
 
-Now, we can get a directory with initial verison of basic module:
+Now, you will get a directory with initial verison of basic module:
 
 ::
 
@@ -137,8 +47,8 @@ Now, we can get a directory with initial verison of basic module:
 
       0 directories, 4 files
 
-We should change to the directory of the new module, the following steps
-will assume we are working at that directory.
+Then you should change to the directory of the new module, the following
+steps will assume we are working at that directory.
 
 .. code:: bash
 
@@ -170,7 +80,11 @@ Now we can add a parameter using the following command:
 
       screwjack param_add C
 
-And, we add two Inputs:
+And, we add two Inputs by the following commands. The first argument
+**X** means the name of the input/output, and the second argument
+**csv** means the type for this input/output. A type can be any string,
+like "csv", "hive.hdfs.table:sub:`x`". For more information about types,
+please follow :doc:`Input/Output Types <io-types>`.
 
 .. code:: bash
 
@@ -191,6 +105,29 @@ Now, you can write your awesome implementation now:
 .. code:: bash
 
       vim main.py
+
+In this tutorial, we would like implement our ``main.py`` like this:
+
+.. code:: python
+
+    from specparser import get_settings_from_file
+
+    from sklearn.svm import LinearSVC
+    import numpy as np
+    import pickle
+
+    def main():
+        settings = get_settings_from_file("spec.json")
+        X = np.genfromtxt(settings.Input.X, delimiter=',', skip_header=1)
+        Y = np.genfromtxt(settings.Input.Y, delimiter=',', skip_header=1)
+        svc = LinearSVC(C=float(settings.Param.C))
+        svc.fit(X,Y)
+        with open(settings.Output.MODEL, "w") as f:
+            pickle.dump(svc, f)
+        print("Done")
+
+    if __name__ == "__main__":
+        main()
 
 If you want add additional files for this module, don't forget add files
 in ``Dockerfile``.
@@ -219,8 +156,8 @@ For more information about ``Dockerfile``, please reference
 Step 4.1: Test in **local**
 ===========================
 
-After write fill code into this module, we might want test it. The
-``screwjack run`` subcommands are design for this.
+After write own implementation into this module, we might want test it.
+The ``screwjack run`` subcommands are design for this.
 
 .. code:: bash
 
