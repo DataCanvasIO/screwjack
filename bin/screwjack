@@ -16,6 +16,7 @@ import time
 import commands
 from pytz import UTC
 from ConfigParser import SafeConfigParser
+import getpass
 
 try:
     import screwjack
@@ -51,6 +52,17 @@ def check_docker_image(image_name):
               shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
     return (p.wait() == 0)
 
+def get_working_root(io_params):
+    return os.path.commonprefix(map(os.path.realpath, io_params.values()))
+
+def map_to_dockerpath(io_params, docker_working_root="/zetdata"):
+    working_root = get_working_root(io_params)
+    if working_root in ['', '/']:
+        print("WARNING! Please arrange your data into single directory.")
+    docker_paths = map(lambda p:os.path.join(docker_working_root, os.path.relpath(p, working_root)), io_params.values())
+    working_volume_str = "%s:%s" % (working_root, docker_working_root)
+    return working_volume_str, " ".join(["%s=%s" % (k,os.path.join(docker_working_root, os.path.relpath(v, working_root))) for k,v in io_params.viewitems()])
+
 def print_spec_json(obj):
     print("Name         : %s(%s)" % (obj['Name'], obj['Version']))
     print("CategoryTags : %s" % obj['CategoryTags'])
@@ -65,7 +77,6 @@ def print_spec_json(obj):
         print("  %s(%s)" % (k, ",".join(v)))
 
 def gen_dummy_global_param(username=None):
-    import getpass
     if not username:
         username = getpass.getuser()
     return {
@@ -346,7 +357,7 @@ class RunCLI(click.MultiCommand):
 
             # split params into two groups
             io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^param_(.*)', k)}
-            io_params_str = " ".join(["%s=%s" % (k,v) for k,v in io_params.viewitems()])
+            io_vol_str, io_params_str = map_to_dockerpath(io_params)
             zetrt_file = build_zetrt(kwargs)
             zetrt_docker_filename = os.path.join("/home/work/", os.path.relpath(zetrt_file.name))
             module_path = "%s/%s" % (ctx.obj.username, spec_json['Name'].lower())
@@ -361,8 +372,10 @@ class RunCLI(click.MultiCommand):
 
             # Build command to execute
             print("Running in docker...")
-            cmd = "docker run -i -v $(pwd):/home/work -w=/home/run -e ZETRT=%s -t %s %s %s" % (zetrt_docker_filename, module_path, spec_json['Cmd'], io_params_str)
+            cur_dir = os.path.realpath(os.path.curdir)
+            cmd = "docker run -i -v %s:/home/work/ -v %s -w=/home/run -e ZETRT=%s -t %s %s %s" % (cur_dir, io_vol_str, zetrt_docker_filename, module_path, spec_json['Cmd'], io_params_str)
             print("Executing : '%s'" % cmd)
+
             ret = os.system(cmd)
             if not ctx.obj.keep_files:
                 os.remove(zetrt_file.name)
