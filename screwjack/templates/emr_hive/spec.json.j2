@@ -4,7 +4,28 @@
     "Version" : "{{ Version }}",
     "CategoryTags": [],
     "Cmd" : "/usr/bin/python main.py",
-    "Param" : { },
+    "Param" : {
+        "hdfs_root": {
+            "Default": "",
+            "Type": "string"
+        },
+        "HiveServer2_Host": {
+            "Default": "",
+            "Type": "string"
+        },
+        "HiveServer2_Port": {
+            "Default": "",
+            "Type": "string"
+        },
+        "FILE_DIR": {
+            "Default": "",
+            "Type": "string"
+        },
+        "UDF_DIR": {
+            "Default": "",
+            "Type": "string"
+        }
+    },
     "Input" : { },
     "Output" : { }
 }
