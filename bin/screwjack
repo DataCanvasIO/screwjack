@@ -24,21 +24,43 @@ except:
     sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
     import screwjack
 
+param_type_map = {
+    "string" : "str",
+    "integer" : "int",
+    "float" : "float",
+    "enum" : "str",
+    "file" : "str"
+}
+
 def gettype(name):
-    type_map = {
-        "string" : "str",
-        "integer" : "int",
-        "float" : "float",
-        "enum" : "str",
-        "file" : "str"
-    }
-    if name not in type_map:
-        raise ValueError(name)
-    name = type_map[name]
+    if name not in param_type_map:
+        raise ValueError("Invalid type for %s" % name)
+    name = param_type_map[name]
     t = getattr(__builtins__, name)
     if isinstance(t, type):
         return t
     raise ValueError(name)
+
+def param_check(param_name, param_type):
+    if param_type not in param_type_map.keys():
+        raise ValueError("Invalid type for %s" % param_name)
+    
+    if not re.match("^[A-Za-z_]+$", param_name):
+        raise ValueError("Invalid Param name '%s'. Param type must be '[A-Za-z_]*'" % param_name)
+
+def inout_check(inout_name, inout_types, spec_json):
+    if not re.match("^[A-Za-z_]+$", inout_name):
+        raise ValueError("Invalid Input/Output name '%s'. Input/Output name must '[A-Za-z_]*'" % inout_name)
+
+    if inout_name in spec_json['Input'].keys():
+        raise ValueError("Input name '%s' already exist, please choose another one" % inout_name)
+
+    if inout_name in spec_json['Output'].keys():
+        raise ValueError("Output name '%s' already exist, please choose another one" % inout_name)
+
+    for t in inout_types:
+        if not re.match("^[a-z\.]+$", t):
+            raise ValueError("Invalid Input/Output type '%s'. Input/Output type must be '[a-z\.]+$'." % t)
 
 def safe_get_spec_json(ctx):
     if not ctx.obj.spec_json:
@@ -146,8 +168,6 @@ def gen_base_image_option(module_type):
 @click.option('--fast-build/--full-build', envvar='DATACANVAS_KEEP_FILES', default=True)
 @click.pass_context
 def cli(ctx, username, module_home, keep_files, fast_build):
-    print("KEEP_FILE  = %s" % str(keep_files))
-    print("FAST_BUILD = %s" % str(fast_build))
     ctx.obj = ZetModule(username, module_home, keep_files, fast_build)
 
 class InitCLI(click.MultiCommand):
@@ -187,6 +207,11 @@ class InitCLI(click.MultiCommand):
                 with open(os.path.join(target_path, target_file), "w") as f:
                     f.write(tmpl.render(obj))
 
+            # TODO:
+            if module_type == 'hive':
+                os.makedirs(os.path.join(target_path, "input/files"))
+                os.makedirs(os.path.join(target_path, "input/udfs"))
+
             # Show Info
             print("Sucessfully created '%s'" % target_path)
 
@@ -213,11 +238,13 @@ def init(ctx, *args, **kvargs):
     pass
 
 @cli.command(short_help="Add a 'Param' to 'spec.json'")
-@click.argument('param_keys', nargs=-1)
+@click.argument('param_key', nargs=-1)
 @click.argument('param_type', nargs=1, required=True)
 @click.pass_context
-def param_add(ctx, param_keys, param_type):
+def param_add(ctx, param_key, param_type):
     data = safe_get_spec_json(ctx)
+    param_check(param_key, param_type)
+
     for k in param_keys:
         data['Param'][k] = { 'Default' : '', 'Type': param_type }
     with open("spec.json", "w") as sj_out:
@@ -241,6 +268,8 @@ def param_del(ctx, param_key):
 @click.pass_context
 def input_add(ctx, input_name, input_types):
     data = safe_get_spec_json(ctx)
+    inout_check(input_name, input_type, data)
+
     data['Input'][input_name] = list(input_types)
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
@@ -263,6 +292,8 @@ def input_del(ctx, input_key):
 @click.pass_context
 def output_add(ctx, output_name, output_types):
     data = safe_get_spec_json(ctx)
+    inout_check(input_name, input_type, data)
+
     data['Output'][output_name] = list(output_types)
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
@@ -391,6 +422,12 @@ class RunCLI(click.MultiCommand):
             return click.Command(name, params=params, callback=docker_callback)
         else:
             return None
+
+@cli.command(short_help="Print summary of 'spec.json'")
+@click.pass_context
+def show(ctx):
+    data = safe_get_spec_json(ctx)
+    print_spec_json(data)
 
 @cli.command(short_help="Render current 'spec.json' to a graphviz file")
 def draw():
