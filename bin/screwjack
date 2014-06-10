@@ -103,10 +103,11 @@ def gen_dummy_global_param(username=None):
     }
 
 class ZetModule(object):
-    def __init__(self, username, module_home=None, keep_files=False):
+    def __init__(self, username, module_home=None, keep_files=False, fast_build=True):
         self.module_home = os.path.abspath(module_home or '.')
         self.username = username
         self.keep_files = keep_files
+        self.fast_build = fast_build
         sj_filename = os.path.join(module_home, "spec.json")
         if not os.path.isfile(sj_filename):
             self.spec_json = None
@@ -141,10 +142,13 @@ def gen_base_image_option(module_type):
 @click.group()
 @click.option('--username', envvar='DATACANVAS_USERNAME', required=True)
 @click.option('--module-home', envvar="DATACANVAS_MODULE_HOME", default=".")
-@click.option('--keep-files', envvar='DATACANVAS_KEEP_FILES', default=False)
+@click.option('--keep-files/--no-keep-files', envvar='DATACANVAS_KEEP_FILES', default=False)
+@click.option('--fast-build/--full-build', envvar='DATACANVAS_KEEP_FILES', default=True)
 @click.pass_context
-def cli(ctx, username, module_home, keep_files):
-    ctx.obj = ZetModule(username, module_home, keep_files)
+def cli(ctx, username, module_home, keep_files, fast_build):
+    print("KEEP_FILE  = %s" % str(keep_files))
+    print("FAST_BUILD = %s" % str(fast_build))
+    ctx.obj = ZetModule(username, module_home, keep_files, fast_build)
 
 class InitCLI(click.MultiCommand):
     def list_commands(self, ctx):
@@ -407,7 +411,10 @@ def internal_build(ctx, force):
     spec_json = safe_get_spec_json(ctx)
     module_path = "%s/%s" % (ctx.obj.username, spec_json['Name'].lower())
     def _build():
-        build_cmd = 'docker build --no-cache=true -t %s .' % module_path
+        if ctx.obj.fast_build:
+            build_cmd = 'docker build -t %s .' % module_path
+        else:
+            build_cmd = 'docker build --no-cache=true -t %s .' % module_path
         print("Executing: %s" % build_cmd)
         if os.system(build_cmd) != 0:
             print("Failed to build '%s'" % module_path)
