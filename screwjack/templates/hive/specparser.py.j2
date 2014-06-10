@@ -234,9 +234,15 @@ class HiveRuntime(ZetRuntime):
     def get_hive_namespace(self):
         ps = self.settings
         glb_vars = ps.GlobalParam
-        return "zetjob_%s_job%s_blk%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'])
+        return "zetjobns_%s_job%s_blk%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'])
 
     def hdfs_upload_dir(self, local_dir):
+        if local_dir == "":
+            return
+
+        if not os.path.isdir(local_dir):
+            raise Exception("Failed to find local directory %s" % local_dir)
+
         hdfs_upload_dir = self.get_hdfs_working_dir(local_dir)
         ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
         for f in ext_files:
@@ -325,7 +331,7 @@ class HiveRuntime(ZetRuntime):
         generated_hive_script = self.generate_script(hive_script, generated_hive_script)
 
         if cmd("beeline -u jdbc:hive2://%s:%s -n hive -p tiger -d org.apache.hive.jdbc.HiveDriver -f '%s' --verbose=true "
-                % (self.settings.Param.HiveServer2_Host, self.settings.Param.HiveServer2_Port, generated_hive_script)) == 0:
+                % (self.settings.Param.HiveServer2_Host, self.settings.Param.HiveServer2_Port, generated_hive_script)) != 0:
             raise Exception("Failed to execute hive script : %s" % generated_hive_script)
 
 class EmrHiveRuntime(HiveRuntime):
@@ -538,4 +544,3 @@ if __name__ == "__main__":
 
     emr_hive_runtime = EmrHiveRuntime()
     emr_hive_runtime.execute()
-
