@@ -45,12 +45,12 @@ def param_check(param_name, param_type):
     if param_type not in param_type_map.keys():
         raise ValueError("Invalid type for %s" % param_name)
     
-    if not re.match("^[A-Za-z_]+$", param_name):
-        raise ValueError("Invalid Param name '%s'. Param type must be '[A-Za-z_]*'" % param_name)
+    if not re.match("^[A-Za-z0-9_]+$", param_name):
+        raise ValueError("Invalid Param name '%s'. Param type must be '[A-Za-z0-9_]*'" % param_name)
 
 def inout_check(inout_name, inout_types, spec_json):
-    if not re.match("^[A-Za-z_]+$", inout_name):
-        raise ValueError("Invalid Input/Output name '%s'. Input/Output name must '[A-Za-z_]*'" % inout_name)
+    if not re.match("^[A-Za-z0-9_]+$", inout_name):
+        raise ValueError("Invalid Input/Output name '%s'. Input/Output name must '[A-Za-z0-9_]*'" % inout_name)
 
     if inout_name in spec_json['Input'].keys():
         raise ValueError("Input name '%s' already exist, please choose another one" % inout_name)
@@ -59,8 +59,8 @@ def inout_check(inout_name, inout_types, spec_json):
         raise ValueError("Output name '%s' already exist, please choose another one" % inout_name)
 
     for t in inout_types:
-        if not re.match("^[a-z\.]+$", t):
-            raise ValueError("Invalid Input/Output type '%s'. Input/Output type must be '[a-z\.]+$'." % t)
+        if not re.match("^[a-z0-9\._]+$", t):
+            raise ValueError("Invalid Input/Output type '%s'. Input/Output type must be '[a-z0-9\._]+$'." % t)
 
 def safe_get_spec_json(ctx):
     if not ctx.obj.spec_json:
