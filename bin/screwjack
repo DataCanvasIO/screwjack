@@ -78,11 +78,17 @@ def get_working_root(io_params):
     return os.path.commonprefix(map(os.path.realpath, io_params.values()))
 
 def map_to_dockerpath(io_params, docker_working_root="/zetdata"):
+    if len(io_params) == 0:
+        print("WARNING! None of Inputs or Outputs.")
+        return "", ""
+
     working_root = get_working_root(io_params)
     if working_root in ['', '/']:
         print("WARNING! Please arrange your data into single directory.")
+
     docker_paths = map(lambda p:os.path.join(docker_working_root, os.path.relpath(p, working_root)), io_params.values())
-    working_volume_str = "%s:%s" % (working_root, docker_working_root)
+    working_volume_str = "-v %s:%s" % (working_root, docker_working_root)
+    print(" ".join(["%s=%s" % (k,os.path.join(docker_working_root, os.path.relpath(v, working_root))) for k,v in io_params.viewitems()]))
     return working_volume_str, " ".join(["%s=%s" % (k,os.path.join(docker_working_root, os.path.relpath(v, working_root))) for k,v in io_params.viewitems()])
 
 def print_spec_json(obj):
@@ -247,8 +253,7 @@ def param_add(ctx, param_key, param_type):
     data = safe_get_spec_json(ctx)
     param_check(param_key, param_type)
 
-    for k in param_keys:
-        data['Param'][k] = { 'Default' : '', 'Type': param_type }
+    data['Param'][param_key] = { 'Default' : '', 'Type': param_type }
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
     print_spec_json(data)
@@ -410,7 +415,7 @@ class RunCLI(click.MultiCommand):
             # Build command to execute
             print("Running in docker...")
             cur_dir = os.path.realpath(os.path.curdir)
-            cmd = "docker run -i -v %s:/home/work/ -v %s -w=/home/run -e ZETRT=%s -t %s %s %s" % (cur_dir, io_vol_str, zetrt_docker_filename, module_path, spec_json['Cmd'], io_params_str)
+            cmd = "docker run -i -v %s:/home/work/ %s -w=/home/run -e ZETRT=%s -t %s %s %s" % (cur_dir, io_vol_str, zetrt_docker_filename, module_path, spec_json['Cmd'], io_params_str)
             print("Executing : '%s'" % cmd)
 
             ret = os.system(cmd)
@@ -467,11 +472,11 @@ def internal_build(ctx, force):
         # No such image
         print("Image '%s' not found, force to rebuild" % module_path)
         _build()
-        ctx.exit()
+        return
 
     if force:
         _build()
-        ctx.exit()
+        return
     modified_files = list(files_in_images(img_date))
     if len(modified_files) > 0:
         print("The following files are modified(against image: '%s'):" % module_path)
