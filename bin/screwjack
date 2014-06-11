@@ -151,11 +151,13 @@ def gen_base_image_option(module_type):
         default_base_image = "zetdata/ubuntu:trusty"
     elif module_type == 'hive':
         default_base_image = "zetdata/cdh:4"
+    elif module_type == 'pig':
+        default_base_image = "zetdata/cdh:4"
     elif module_type == 'emr_hive':
         default_base_image = "zetdata/ubuntu:trusty"
     else:
         default_base_image = "zetdata/ubuntu:trusty"
-    
+
     return click.Option(('--base-image', '-b'), prompt="Base Image",
                         type=click.Choice(base_images),
                         default=default_base_image,
