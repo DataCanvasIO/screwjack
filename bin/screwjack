@@ -294,7 +294,7 @@ def input_del(ctx, input_key):
 @click.pass_context
 def output_add(ctx, output_name, output_types):
     data = safe_get_spec_json(ctx)
-    inout_check(input_name, input_types, data)
+    inout_check(output_name, output_types, data)
 
     data['Output'][output_name] = list(output_types)
     with open("spec.json", "w") as sj_out:
