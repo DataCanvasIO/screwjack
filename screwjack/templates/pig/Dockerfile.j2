@@ -5,6 +5,11 @@
 FROM {{ BaseImage }}
 # MAINTAINER Your_name, Your_email_address
 
+RUN apt-get install -y pig
+
 ADD spec.json /home/run/
 ADD main.py /home/run/
 ADD specparser.py /home/run/
+ADD main.pig /home/run/
+ADD pig.properties /home/run/
+

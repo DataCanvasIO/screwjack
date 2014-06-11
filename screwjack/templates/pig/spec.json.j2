@@ -4,7 +4,20 @@
     "Version" : "{{ Version }}",
     "CategoryTags": [],
     "Cmd" : "/usr/bin/python main.py",
-    "Param" : { },
+    "Param" : {
+        "hdfs_root": {
+            "Default": "hdfs://127.0.0.1/",
+            "Type": "string"
+        },
+        "yarn_address": {
+            "Default": "127.0.0.1:8032",
+            "Type": "string"
+        },
+        "yarn_scheduler_address": {
+            "Default": "127.0.0.1:8030",
+            "Type": "string"
+        }
+    },
     "Input" : { },
     "Output" : { }
 }
