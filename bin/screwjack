@@ -208,7 +208,7 @@ class InitCLI(click.MultiCommand):
                     f.write(tmpl.render(obj))
 
             # TODO:
-            if module_type == 'hive':
+            if module_type in ['hive', 'emr_hive']:
                 os.makedirs(os.path.join(target_path, "input/files"))
                 os.makedirs(os.path.join(target_path, "input/udfs"))
 
