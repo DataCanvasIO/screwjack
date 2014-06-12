@@ -2,4 +2,4 @@
 [ ]. Add class to parse and manipulate 'Dockerfile'
 [ ]. Record a quickstart 
 [ ]. Add 'screwjack shell' subcommand
-[ ]. Fix bug for the first time build module
+[X]. Fix bug for the first time build module

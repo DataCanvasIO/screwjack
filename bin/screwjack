@@ -217,8 +217,8 @@ class InitCLI(click.MultiCommand):
 
             # TODO:
             if module_type in ['hive', 'emr_hive']:
-                os.makedirs(os.path.join(target_path, "input/files"))
-                os.makedirs(os.path.join(target_path, "input/udfs"))
+                os.makedirs(os.path.join(target_path, "resources/files"))
+                os.makedirs(os.path.join(target_path, "resources/udfs"))
 
             # Show Info
             print("Sucessfully created '%s'" % target_path)
