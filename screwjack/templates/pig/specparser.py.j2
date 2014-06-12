@@ -235,11 +235,19 @@ class ZetRuntime(object):
     def __repr__(self):
         return str(self.settings)
 
+    @property
+    def hdfs_root(self):
+        ps = self.settings
+        if 'hdfs_root' in ps.Param._asdict():
+            return ps.Param.hdfs_root.val
+        else:
+            return '/'
+
 class HiveRuntime(ZetRuntime):
     def get_hdfs_working_dir(self, path=""):
         ps = self.settings
         glb_vars = ps.GlobalParam
-        return os.path.join(ps.Param.hdfs_root.val, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
+        return os.path.join(self.hdfs_root, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
 
     def get_hive_namespace(self):
         ps = self.settings
@@ -368,7 +376,8 @@ class EmrHiveRuntime(HiveRuntime):
     def get_s3_working_dir(self, path=""):
         ps = self.settings
         glb_vars = ps.GlobalParam
-        return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
+        remote_path = os.path.normpath(os.path.join(self.s3_bucket.name, 'zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path))
+        return os.path.join("s3://", remote_path)
 
     def get_emr_job_name(self):
         ps = self.settings
@@ -384,7 +393,7 @@ class EmrHiveRuntime(HiveRuntime):
             return "zetjob_%s_job%s_blk%s_OUTPUT_%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'], output_name)
         elif out_type.startswith("hive.hdfs."):
             return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
-        if out_type.startswith("hive.s3."):
+        elif out_type.startswith("hive.s3."):
             return self.get_s3_working_dir("OUTPUT_%s" % output_name)
         else:
             raise ValueError("Invalid type for hive, type must start with 'hive.table.' or 'hive.hdfs.'")
@@ -403,12 +412,11 @@ class EmrHiveRuntime(HiveRuntime):
         ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
         for f in ext_files:
             f_local = os.path.join(local_dir, f)
-            f_remote = os.path.join(s3_upload_dir, local_dir, f)
-            f_remote_full = os.path.join("s3://", self.s3_bucket.name, f_remote)
+            f_remote_full = self.get_s3_working_dir(os.path.join(local_dir, f))
 
             print("S3 Upload      :: %s ====> %s" % (f_local, s3_upload_dir))
             print("S3 remote_full :: %s" % f_remote_full)
-            yield s3_upload(self.s3_bucket, f_remote, f_local)
+            yield s3_upload(self.s3_bucket, f_local, f_remote_full)
 
     def files_uploader(self, local_dir):
         return self.s3_upload_dir(local_dir)
@@ -434,8 +442,10 @@ class EmrHiveRuntime(HiveRuntime):
 
         s3_working_dir = self.get_s3_working_dir()
         hive_script_remote = os.path.join(s3_working_dir, os.path.basename(hive_script_local))
-        hive_script_remote_full = s3_upload(self.s3_bucket, hive_script_remote, hive_script_local)
-        print(hive_script_remote_full)
+        hive_script_remote_full = s3_upload(self.s3_bucket, hive_script_local, hive_script_remote)
+        print("========= Generated Hive Script =========")
+        print(open(hive_script_local).read())
+        print("=========================================")
         print("EmrHiveRuntime.execute()")
         self.emr_execute_hive(hive_script_remote_full)
 
@@ -465,7 +475,7 @@ class EmrJarRuntime(ZetRuntime):
     def execute(self, jar_path, args):
         from boto.emr.step import JarStep
 
-        s3_jar_path = s3_upload(self.s3_bucket, self.get_s3_working_dir(jar_path), jar_path)
+        s3_jar_path = s3_upload(self.s3_bucket, jar_path, self.get_s3_working_dir(jar_path))
         # s3_jar_path = "s3://run-jars/jar/mahout-core-1.0-SNAPSHOT-job.jar"
         print("Uploading jar to s3 : %s -> %s" % (jar_path, s3_jar_path))
 
@@ -476,14 +486,12 @@ class EmrJarRuntime(ZetRuntime):
         print("Waiting jobflow step done")
         emr_wait_job(self.emr_conn, self.job_flow_id)
 
-class PigRuntime(object):
-    def __init__(self, spec_filename="spec.json"):
-        self.settings = get_settings_from_file(spec_filename)
+class PigRuntime(ZetRuntime):
 
     def get_hdfs_working_dir(self, path=""):
         ps = self.settings
         glb_vars = ps.GlobalParam
-        return os.path.join(ps.Param.hdfs_root.val, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
+        return os.path.join(self.hdfs_root, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
 
     def clean_hdfs_working_dir(self):
         hdfs_working_dir = self.get_hdfs_working_dir()
@@ -565,15 +573,18 @@ def percent_cb(complete, total):
     sys.stdout.write('.')
     sys.stdout.flush()
 
-def s3_delete(bucket, prefix_path):
+def s3_delete(bucket, s3_path):
     import boto
-    print("s3_delete %s" % prefix_path)
+    from urlparse import urlparse
+    print("s3_delete %s" % s3_path)
+    prefix_path = urlparse(s3_path).path[1:]
     for key in bucket.list(prefix=prefix_path):
         key.delete()
     return True
 
-def s3_upload(bucket, remote_filename, local_filename):
+def s3_upload(bucket, local_filename, remote_filename):
     import boto
+    from urlparse import urlparse
     # max size in bytes before uploading in parts.
     # between 1 and 5 GB recommended
     MAX_SIZE = 40 * 1000 * 1000
@@ -581,15 +592,15 @@ def s3_upload(bucket, remote_filename, local_filename):
     PART_SIZE = 6 * 1000 * 1000
 
     fn_local = os.path.normpath(local_filename)
-    fn_remote = os.path.normpath(remote_filename)
-    fn_remote_full = os.path.join("s3://", bucket.name, fn_remote)
+    fn_remote = urlparse(remote_filename).path
+    fn_remote_full = remote_filename
 
     filesize = os.path.getsize(local_filename)
     print("filesize = %d, maxsize = %d" % (filesize, MAX_SIZE))
     if filesize > MAX_SIZE:
         print("Multi-part uploading...")
         print("From : %s" % fn_local)
-        print("To   : %s" % fn_remote)
+        print("To   : %s" % fn_remote_full)
         mp = bucket.initiate_multipart_upload(fn_local)
         fp = open(sourcepath,'rb')
         fp_num = 0
@@ -602,7 +613,7 @@ def s3_upload(bucket, remote_filename, local_filename):
     else:
         print("Single-part upload...")
         print("From : %s" % fn_local)
-        print("To   : %s" % fn_remote)
+        print("To   : %s" % fn_remote_full)
         k = boto.s3.key.Key(bucket)
         k.key = fn_remote
         k.set_contents_from_filename(fn_local, cb=percent_cb, num_cb=10)
