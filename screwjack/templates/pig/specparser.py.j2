@@ -63,11 +63,12 @@ def read_whole_file(filename):
         return f.read()
 
 class Input(str):
-    def __new__(self, x):
+    def __new__(self, x, _types):
         return str.__new__(self, x)
 
-    def __init__(self, x):
+    def __init__(self, x, _types):
         self.x = x
+        self._types = _types
 
     def __repr__(self):
         return str(self.x)
@@ -90,12 +91,17 @@ class Input(str):
     def val(self):
         return self.as_first_line()
 
+    @property
+    def types(self):
+        return self._types
+
 class Output(str):
-    def __new__(self, x):
+    def __new__(self, x, _types):
         return str.__new__(self, x)
 
-    def __init__(self, x):
+    def __init__(self, x, _types):
         self.x = x
+        self._types = _types
 
     def __repr__(self):
         return str(self.x)
@@ -122,6 +128,10 @@ class Output(str):
     def val(self, value):
         with open(self.x, "w+") as f:
             f.write(value)
+
+    @property
+    def types(self):
+        return self._types
 
 class Param(str):
     def __new__(self, x, typeinfo):
@@ -161,11 +171,11 @@ def input_output_builder(spec_input, spec_output):
         raise ValueError("Missing output parameters")
 
     InputSettings = namedtuple('InputSettings', spec_input.keys())
-    in_params = {k:Input(params[k]) for k,v in spec_input.items()}
+    in_params = {in_k:Input(params[in_k], in_type) for in_k,in_type in spec_input.items()}
     input_settings = InputSettings(**in_params)
 
     OutputSettings = namedtuple('OutputSettings', spec_output.keys())
-    out_params = {k:Output(params[k]) for k,v in spec_output.items()}
+    out_params = {out_k:Output(params[out_k], out_type) for out_k,out_type in spec_output.items()}
     output_settings = OutputSettings(**out_params)
 
     return input_settings, output_settings
@@ -260,15 +270,21 @@ class HiveRuntime(ZetRuntime):
     def files_uploader(self, local_dir):
         return self.hdfs_upload_dir(local_dir)
 
-    def hive_output_builder(self, output_name):
+    def hive_output_builder(self, output_name, output_obj):
         ps = self.settings
         glb_vars = ps.GlobalParam
-        return "zetjob_%s_job%s_blk%s_%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'], output_name)
+        out_type = output_obj.types[0]
+        if out_type.startswith("hive.table."):
+            return "zetjob_%s_job%s_blk%s_OUTPUT_%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'], output_name)
+        elif out_type.startswith("hive.hdfs."):
+            return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
+        else:
+            raise ValueError("Invalid type for hive, type must start with 'hive.table.' or 'hive.hdfs.'")
 
     def header_builder(self, hive_ns, uploaded_files, uploaded_jars):
         # Build Output Tables
         for output_name,output_obj in self.settings.Output._asdict().items():
-            output_obj.val = self.hive_output_builder(output_name)
+            output_obj.val = self.hive_output_builder(output_name, output_obj)
 
         return "\n".join(
                 itertools.chain(
@@ -359,9 +375,30 @@ class EmrHiveRuntime(HiveRuntime):
         glb_vars = ps.GlobalParam
         return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'])
 
+    def hive_output_builder(self, output_name, output_obj):
+        # TODO : should refactor this function to base class
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+        out_type = output_obj.types[0]
+        if out_type.startswith("hive.table."):
+            return "zetjob_%s_job%s_blk%s_OUTPUT_%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'], output_name)
+        elif out_type.startswith("hive.hdfs."):
+            return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
+        if out_type.startswith("hive.s3."):
+            return self.get_s3_working_dir("OUTPUT_%s" % output_name)
+        else:
+            raise ValueError("Invalid type for hive, type must start with 'hive.table.' or 'hive.hdfs.'")
+
     def s3_upload_dir(self, local_dir):
         print("EmrHiveRuntime.s3_uploader()")
         print("s3_upload_dir :::: %s" % local_dir)
+
+        if local_dir == "":
+            return
+
+        if not os.path.isdir(local_dir):
+            raise Exception("Failed to find local directory %s" % local_dir)
+
         s3_upload_dir = self.get_s3_working_dir(local_dir)
         ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
         for f in ext_files:

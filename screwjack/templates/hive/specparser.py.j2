@@ -63,11 +63,12 @@ def read_whole_file(filename):
         return f.read()
 
 class Input(str):
-    def __new__(self, x):
+    def __new__(self, x, _types):
         return str.__new__(self, x)
 
-    def __init__(self, x):
+    def __init__(self, x, _types):
         self.x = x
+        self._types = _types
 
     def __repr__(self):
         return str(self.x)
@@ -90,12 +91,17 @@ class Input(str):
     def val(self):
         return self.as_first_line()
 
+    @property
+    def types(self):
+        return self._types
+
 class Output(str):
-    def __new__(self, x):
+    def __new__(self, x, _types):
         return str.__new__(self, x)
 
-    def __init__(self, x):
+    def __init__(self, x, _types):
         self.x = x
+        self._types = _types
 
     def __repr__(self):
         return str(self.x)
@@ -122,6 +128,10 @@ class Output(str):
     def val(self, value):
         with open(self.x, "w+") as f:
             f.write(value)
+
+    @property
+    def types(self):
+        return self._types
 
 class Param(str):
     def __new__(self, x, typeinfo):
@@ -161,11 +171,11 @@ def input_output_builder(spec_input, spec_output):
         raise ValueError("Missing output parameters")
 
     InputSettings = namedtuple('InputSettings', spec_input.keys())
-    in_params = {k:Input(params[k]) for k,v in spec_input.items()}
+    in_params = {in_k:Input(params[in_k], in_type) for in_k,in_type in spec_input.items()}
     input_settings = InputSettings(**in_params)
 
     OutputSettings = namedtuple('OutputSettings', spec_output.keys())
-    out_params = {k:Output(params[k]) for k,v in spec_output.items()}
+    out_params = {out_k:Output(params[out_k], out_type) for out_k,out_type in spec_output.items()}
     output_settings = OutputSettings(**out_params)
 
     return input_settings, output_settings
@@ -260,15 +270,21 @@ class HiveRuntime(ZetRuntime):
     def files_uploader(self, local_dir):
         return self.hdfs_upload_dir(local_dir)
 
-    def hive_output_builder(self, output_name):
+    def hive_output_builder(self, output_name, output_obj):
         ps = self.settings
         glb_vars = ps.GlobalParam
-        return "zetjob_%s_job%s_blk%s_%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'], output_name)
+        out_type = output_obj.types[0]
+        if out_type.startswith("hive.table."):
+            return "zetjob_%s_job%s_blk%s_OUTPUT_%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'], output_name)
+        elif out_type.startswith("hive.hdfs."):
+            return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
+        else:
+            raise ValueError("Invalid type for hive, type must start with 'hive.table.' or 'hive.hdfs.'")
 
     def header_builder(self, hive_ns, uploaded_files, uploaded_jars):
         # Build Output Tables
         for output_name,output_obj in self.settings.Output._asdict().items():
-            output_obj.val = self.hive_output_builder(output_name)
+            output_obj.val = self.hive_output_builder(output_name, output_obj)
 
         return "\n".join(
                 itertools.chain(
@@ -359,9 +375,30 @@ class EmrHiveRuntime(HiveRuntime):
         glb_vars = ps.GlobalParam
         return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'])
 
+    def hive_output_builder(self, output_name, output_obj):
+        # TODO : should refactor this function to base class
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+        out_type = output_obj.types[0]
+        if out_type.startswith("hive.table."):
+            return "zetjob_%s_job%s_blk%s_OUTPUT_%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'], output_name)
+        elif out_type.startswith("hive.hdfs."):
+            return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
+        if out_type.startswith("hive.s3."):
+            return self.get_s3_working_dir("OUTPUT_%s" % output_name)
+        else:
+            raise ValueError("Invalid type for hive, type must start with 'hive.table.' or 'hive.hdfs.'")
+
     def s3_upload_dir(self, local_dir):
         print("EmrHiveRuntime.s3_uploader()")
         print("s3_upload_dir :::: %s" % local_dir)
+
+        if local_dir == "":
+            return
+
+        if not os.path.isdir(local_dir):
+            raise Exception("Failed to find local directory %s" % local_dir)
+
         s3_upload_dir = self.get_s3_working_dir(local_dir)
         ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
         for f in ext_files:
@@ -442,6 +479,80 @@ class EmrJarRuntime(ZetRuntime):
 class PigRuntime(object):
     def __init__(self, spec_filename="spec.json"):
         self.settings = get_settings_from_file(spec_filename)
+
+    def get_hdfs_working_dir(self, path=""):
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+        return os.path.join(ps.Param.hdfs_root.val, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
+
+    def clean_hdfs_working_dir(self):
+        hdfs_working_dir = self.get_hdfs_working_dir()
+        if not clean_hdfs_path(hdfs_working_dir):
+            # TODO : refactor to 'HdfsException'
+            raise Exception("Can not clean hdfs path : %s" % hdfs_working_dir)
+
+    def clean_working_dir(self):
+        self.clean_hdfs_working_dir()
+
+    def pig_output_builder(self, output_name, output_obj):
+        glb_vars = self.settings.GlobalParam
+        return os.path.join(self.get_hdfs_working_dir(), "OUTPUT_%s" % output_name)
+
+    def header_builder(self, uploaded_jars):
+        # Build Output Tables
+        for output_name,output_obj in self.settings.Output._asdict().items():
+            output_obj.val = self.pig_output_builder(output_name, output_obj)
+
+        return "\n".join(
+                itertools.chain(
+                    ["%%declare PARAM_%s '%s'" % (k,v) for k,v in self.settings.Param._asdict().items()],
+                    ["%%declare INPUT_%s '%s'" % (k,v.val) for k,v in self.settings.Input._asdict().items()],
+                    ["%%declare OUTPUT_%s '%s'" % (k,v.val) for k,v in self.settings.Output._asdict().items()]))
+
+    def generate_script(self, hive_script, target_filename=None):
+        # TODO: UDF jars
+        uploaded_jars = []
+
+        # Build Input, Output and Param
+        header = self.header_builder(uploaded_jars)
+        if target_filename == None:
+            import tempfile
+            tmp_file = tempfile.NamedTemporaryFile(prefix="pig_generated_", suffix=".hql", delete=False)
+            tmp_file.close()
+            target_filename = tmp_file.name
+
+        with open(hive_script, "r") as f, open(target_filename, "w+") as out_f:
+            out_f.write("/*************************\n")
+            out_f.write(" * Header\n")
+            out_f.write(" *************************/\n")
+            out_f.write(header)
+            out_f.write("\n")
+            out_f.write("/*************************\n")
+            out_f.write(" * Main\n")
+            out_f.write(" *************************/\n")
+            out_f.write("\n")
+            out_f.write(f.read())
+
+        return target_filename
+
+    def generate_pig_conf(self):
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+
+        with open("/home/run/pig.properties", "a") as pf:
+            pf.write("fs.default.name=%s\n" % ps.Param.hdfs_root)
+            pf.write("yarn.resourcemanager.address=%s\n" % ps.Param.yarn_address)
+            pf.write("yarn.resourcemanager.scheduler.address=%s\n" % ps.Param.yarn_scheduler_address)
+        os.system("cat /home/run/pig.properties")
+
+    def execute(self, pig_script):
+        self.clean_working_dir()
+
+        self.generate_pig_conf()
+        generated_pig_script = self.generate_script(pig_script)
+        os.system("cat %s" % generated_pig_script)
+        ret = os.system("pig -x mapreduce -P /home/run/pig.properties %s" % generated_pig_script)
+        print(ret)
 
 # Utility Functions
 def clean_hdfs_path(p):
