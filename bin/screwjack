@@ -246,7 +246,7 @@ def init(ctx, *args, **kvargs):
     pass
 
 @cli.command(short_help="Add a 'Param' to 'spec.json'")
-@click.argument('param_key', nargs=-1)
+@click.argument('param_key', nargs=1)
 @click.argument('param_type', nargs=1, required=True)
 @click.pass_context
 def param_add(ctx, param_key, param_type):
