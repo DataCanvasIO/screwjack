@@ -32,7 +32,7 @@
 """
 A minimum spec.json parser.
 """
-__version__ = "0.1.1"
+__version__ = "0.2.2"
 __author__ = "xiaolin"
 
 import json
@@ -150,10 +150,10 @@ class Param(str):
     @property
     def val(self):
         type_handler = {
-            "string" : lambda x : x,
-            "float" : lambda x : float(x),
-            "integer" : lambda x : int(x),
-            "enum" : lambda x : x,
+            "string" : lambda x: x,
+            "float" : lambda x: float(x),
+            "integer" : lambda x: int(x),
+            "enum" : lambda x: x,
             "file" : read_whole_file
         }
         param_type = self._typeinfo['Type']
@@ -171,7 +171,7 @@ def input_output_builder(spec_input, spec_output):
         raise ValueError("Missing output parameters")
 
     InputSettings = namedtuple('InputSettings', spec_input.keys())
-    in_params = {in_k:Input(params[in_k], in_type) for in_k,in_type in spec_input.items()}
+    in_params = {in_k:Input(params[in_k], in_type) for in_k, in_type in spec_input.items()}
     input_settings = InputSettings(**in_params)
 
     OutputSettings = namedtuple('OutputSettings', spec_output.keys())
@@ -188,12 +188,12 @@ def param_builder(spec_param, param_json):
             return spec_param[k]['Default']
 
     ParamSettings = namedtuple('ParamSettings', spec_param.keys())
-    param_dict = {k:Param(get_param(k), v) for k,v in spec_param.items()}
+    param_dict = {k:Param(get_param(k), v) for k, v in spec_param.items()}
     env_settings = ParamSettings(**param_dict)
     return env_settings
 
 def global_param_builder(param_json):
-    return {k:v['Val'] for k,v in param_json.items()}
+    return {k:v['Val'] for k, v in param_json.items()}
 
 def get_settings(spec_json):
     moderate_keys = ['Name', 'Param', 'Input', 'Output', 'Cmd', 'Description']
@@ -235,6 +235,10 @@ class ZetRuntime(object):
     def __repr__(self):
         return str(self.settings)
 
+class HadoopRuntime(ZetRuntime):
+    def __init__(self, spec_filename="spec.json"):
+        super(HadoopRuntime, self).__init__(spec_filename=spec_filename)
+
     @property
     def hdfs_root(self):
         ps = self.settings
@@ -243,11 +247,12 @@ class ZetRuntime(object):
         else:
             return '/'
 
-class HiveRuntime(ZetRuntime):
     def get_hdfs_working_dir(self, path=""):
         ps = self.settings
         glb_vars = ps.GlobalParam
-        return os.path.join(self.hdfs_root, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
+        # return os.path.join(self.hdfs_root, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
+        remote_path = os.path.normpath(os.path.join('tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path))
+        return os.path.join(self.hdfs_root, remote_path)
 
     def get_hive_namespace(self):
         ps = self.settings
@@ -264,21 +269,102 @@ class HiveRuntime(ZetRuntime):
         hdfs_upload_dir = self.get_hdfs_working_dir(local_dir)
         ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
         for f in ext_files:
-            f_remote = os.path.join(hdfs_upload_dir, local_dir, f)
-            f_remote_dir = os.path.dirname(f_remote)
+            # f_remote = os.path.join(hdfs_upload_dir, local_dir, f)
+            # f_remote_dir = os.path.dirname(f_remote)
+            f_local = os.path.join(local_dir, f)
+            f_remote_dir = self.get_hdfs_working_dir(f_local)
             if cmd("hadoop fs -mkdir -p %s" % f_remote_dir) != 0:
                 raise Exception("Failed to create dir %s" % f_remote_dir)
-            print("HDFS Upload :: %s ====> %s" % (f, f_remote))
+            print("HDFS Upload :: %s ====> %s" % (f, f_remote_dir))
             print("hadoop fs -copyFromLocal %s %s" % (os.path.join(local_dir, f), os.path.join(f_remote_dir)))
             if cmd("hadoop fs -copyFromLocal %s %s" % (os.path.join(local_dir, f), f_remote_dir)) == 0:
-                yield os.path.join(f_remote)
+                yield os.path.join(f_remote_dir)
             else:
-                raise Exception("Failed to upload file %s to %s" % (f, f_remote))
+                raise Exception("Failed to upload file %s to %s" % (f_local, f_remote_dir))
 
+    def hdfs_clean_working_dir(self):
+        hdfs_working_dir = self.get_hdfs_working_dir()
+        if not clean_hdfs_path(hdfs_working_dir):
+            # TODO : refactor to 'HiveException'
+            raise Exception("Can not clean hdfs path : %s" % hdfs_working_dir)
+
+    def clean_working_dir(self):
+        self.hdfs_clean_working_dir()
+
+class EmrRuntime(HadoopRuntime):
+    def __init__(self, spec_filename="spec.json"):
+        import boto
+        from boto.emr.connection import EmrConnection, RegionInfo
+
+        super(EmrRuntime, self).__init__(spec_filename)
+        p = self.settings.Param
+        self.s3_conn = boto.connect_s3(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET)
+        self.s3_bucket = self.s3_conn.get_bucket(p.S3_BUCKET)
+        self.region = p.AWS_Region
+        self.emr_conn = EmrConnection(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET,
+                                      region = RegionInfo(name = self.region,
+                                                          endpoint = self.region + '.elasticmapreduce.amazonaws.com'))
+        self.job_flow_id = p.EMR_jobFlowId
+
+    def get_s3_working_dir(self, path=""):
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+        remote_path = os.path.normpath(os.path.join(self.s3_bucket.name, 'zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path))
+        return os.path.join("s3://", remote_path)
+
+    def get_emr_job_name(self):
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+        return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'])
+
+    def s3_upload_dir(self, local_dir):
+        print("EmrHiveRuntime.s3_uploader()")
+        print("s3_upload_dir :::: %s" % local_dir)
+
+        if local_dir == "":
+            return
+
+        if not os.path.isdir(local_dir):
+            raise Exception("Failed to find local directory %s" % local_dir)
+
+        s3_upload_dir = self.get_s3_working_dir(local_dir)
+        ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
+        for f in ext_files:
+            f_local = os.path.join(local_dir, f)
+            f_remote_full = self.get_s3_working_dir(os.path.join(local_dir, f))
+
+            print("S3 Upload      :: %s ====> %s" % (f_local, s3_upload_dir))
+            print("S3 remote_full :: %s" % f_remote_full)
+            yield s3_upload(self.s3_bucket, f_local, f_remote_full)
+
+    def s3_clean_working_dir(self):
+        s3_working_dir = self.get_s3_working_dir()
+        if not s3_delete(self.s3_bucket, s3_working_dir):
+            # TODO : refactor to 'HiveException'
+            raise Exception("Can not clean s3 path : %s" % s3_working_dir)
+
+    def s3_upload(self, filename):
+        from urlparse import urlparse
+        parse_ret = urlparse(filename)
+        if parse_ret.scheme == '':
+            s3_working_dir = self.get_s3_working_dir()
+            file_remote = os.path.join(s3_working_dir, os.path.normpath(os.path.basename(filename)))
+            file_remote_full = s3_upload(self.s3_bucket, filename, file_remote)
+            return file_remote_full
+        elif parse_ret.scheme == 's3':
+            return filename
+        else:
+            raise ValueError("Invalid filename to upload to s3: %s" % filename)
+
+    def clean_working_dir(self):
+        self.s3_clean_working_dir()
+
+class HiveRuntime(HadoopRuntime):
     def files_uploader(self, local_dir):
         return self.hdfs_upload_dir(local_dir)
 
     def hive_output_builder(self, output_name, output_obj):
+        # TODO: refactor this method
         ps = self.settings
         glb_vars = ps.GlobalParam
         out_type = output_obj.types[0]
@@ -295,22 +381,16 @@ class HiveRuntime(ZetRuntime):
             output_obj.val = self.hive_output_builder(output_name, output_obj)
 
         return "\n".join(
-                itertools.chain(
-                    ["ADD FILE %s;" % f for f in uploaded_files],
-                    ["ADD JAR %s;" % f for f in uploaded_jars],
-                    ["set hivevar:MYNS = %s;" % hive_ns],
-                    ["set hivevar:PARAM_%s = %s;" % (k,v) for k,v in self.settings.Param._asdict().items()],
-                    ["set hivevar:INPUT_%s = %s;" % (k,v.val) for k,v in self.settings.Input._asdict().items()],
-                    ["set hivevar:OUTPUT_%s = %s;" % (k,v.val) for k,v in self.settings.Output._asdict().items()]))
-
-    def clean_hdfs_working_dir(self):
-        hdfs_working_dir = self.get_hdfs_working_dir()
-        if not clean_hdfs_path(hdfs_working_dir):
-            # TODO : refactor to 'HiveException'
-            raise Exception("Can not clean hdfs path : %s" % hdfs_working_dir)
+            itertools.chain(
+                ["ADD FILE %s;" % f for f in uploaded_files],
+                ["ADD JAR %s;" % f for f in uploaded_jars],
+                ["set hivevar:MYNS = %s;" % hive_ns],
+                ["set hivevar:PARAM_%s = %s;" % (k,v) for k,v in self.settings.Param._asdict().items()],
+                ["set hivevar:INPUT_%s = %s;" % (k,v.val) for k,v in self.settings.Input._asdict().items()],
+                ["set hivevar:OUTPUT_%s = %s;" % (k,v.val) for k,v in self.settings.Output._asdict().items()]))
 
     def clean_working_dir(self):
-        self.clean_hdfs_working_dir()
+        self.hdfs_clean_working_dir()
 
     def generate_script(self, hive_script, target_filename=None):
         hive_ns = self.get_hive_namespace()
@@ -358,31 +438,9 @@ class HiveRuntime(ZetRuntime):
                 % (self.settings.Param.HiveServer2_Host, self.settings.Param.HiveServer2_Port, generated_hive_script)) != 0:
             raise Exception("Failed to execute hive script : %s" % generated_hive_script)
 
-class EmrHiveRuntime(HiveRuntime):
+class EmrHiveRuntime(EmrRuntime, HiveRuntime):
     def __init__(self, spec_filename="spec.json"):
-        import boto
-        from boto.emr.connection import EmrConnection, RegionInfo
-
-        super(HiveRuntime, self).__init__(spec_filename)
-        p = self.settings.Param
-        self.s3_conn = boto.connect_s3(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET)
-        self.s3_bucket = self.s3_conn.get_bucket(p.S3_BUCKET)
-        self.region = p.AWS_Region
-        self.emr_conn = EmrConnection(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET,
-                region = RegionInfo(name = self.region,
-                    endpoint = self.region + '.elasticmapreduce.amazonaws.com'))
-        self.job_flow_id = p.EMR_jobFlowId
-
-    def get_s3_working_dir(self, path=""):
-        ps = self.settings
-        glb_vars = ps.GlobalParam
-        remote_path = os.path.normpath(os.path.join(self.s3_bucket.name, 'zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path))
-        return os.path.join("s3://", remote_path)
-
-    def get_emr_job_name(self):
-        ps = self.settings
-        glb_vars = ps.GlobalParam
-        return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'])
+        super(EmrHiveRuntime, self).__init__(spec_filename)
 
     def hive_output_builder(self, output_name, output_obj):
         # TODO : should refactor this function to base class
@@ -396,39 +454,10 @@ class EmrHiveRuntime(HiveRuntime):
         elif out_type.startswith("hive.s3."):
             return self.get_s3_working_dir("OUTPUT_%s" % output_name)
         else:
-            raise ValueError("Invalid type for hive, type must start with 'hive.table.' or 'hive.hdfs.'")
-
-    def s3_upload_dir(self, local_dir):
-        print("EmrHiveRuntime.s3_uploader()")
-        print("s3_upload_dir :::: %s" % local_dir)
-
-        if local_dir == "":
-            return
-
-        if not os.path.isdir(local_dir):
-            raise Exception("Failed to find local directory %s" % local_dir)
-
-        s3_upload_dir = self.get_s3_working_dir(local_dir)
-        ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
-        for f in ext_files:
-            f_local = os.path.join(local_dir, f)
-            f_remote_full = self.get_s3_working_dir(os.path.join(local_dir, f))
-
-            print("S3 Upload      :: %s ====> %s" % (f_local, s3_upload_dir))
-            print("S3 remote_full :: %s" % f_remote_full)
-            yield s3_upload(self.s3_bucket, f_local, f_remote_full)
+            raise ValueError("Invalid type for hive, type must start with 'hive.table.' or 'hive.hdfs.' or 'hive.s3.'")
 
     def files_uploader(self, local_dir):
         return self.s3_upload_dir(local_dir)
-
-    def clean_s3_working_dir(self):
-        s3_working_dir = self.get_s3_working_dir()
-        if not s3_delete(self.s3_bucket, s3_working_dir):
-            # TODO : refactor to 'HiveException'
-            raise Exception("Can not clean s3 path : %s" % s3_working_dir)
-
-    def clean_working_dir(self):
-        self.clean_s3_working_dir()
 
     def emr_execute_hive(self, s3_hive_script):
         from boto.emr.step import HiveStep
@@ -449,28 +478,9 @@ class EmrHiveRuntime(HiveRuntime):
         print("EmrHiveRuntime.execute()")
         self.emr_execute_hive(hive_script_remote_full)
 
-class EmrJarRuntime(ZetRuntime):
+class EmrJarRuntime(EmrRuntime):
     def __init__(self, spec_filename="spec.json"):
-        import boto
-        from boto.emr.connection import EmrConnection, RegionInfo
-
-        # super(ZetRuntime, self).__init__()
-        # TODO
-        self.settings = get_settings_from_file(spec_filename)
-
-        p = self.settings.Param
-        self.s3_conn = boto.connect_s3(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET)
-        self.s3_bucket = self.s3_conn.get_bucket(p.S3_BUCKET)
-        self.region = p.AWS_Region
-        self.emr_conn = EmrConnection(p.AWS_ACCESS_KEY_ID, p.AWS_ACCESS_KEY_SECRET,
-                region = RegionInfo(name = self.region,
-                    endpoint = self.region + '.elasticmapreduce.amazonaws.com'))
-        self.job_flow_id = p.EMR_jobFlowId
-
-    def get_s3_working_dir(self, path=""):
-        ps = self.settings
-        glb_vars = ps.GlobalParam
-        return os.path.join('zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
+        super(EmrJarRuntime, self).__init__(spec_filename)
 
     def execute(self, jar_path, args):
         from boto.emr.step import JarStep
@@ -486,25 +496,26 @@ class EmrJarRuntime(ZetRuntime):
         print("Waiting jobflow step done")
         emr_wait_job(self.emr_conn, self.job_flow_id)
 
-class PigRuntime(ZetRuntime):
+class PigRuntime(HadoopRuntime):
+    def __init__(self, spec_filename="spec.json"):
+        super(PigRuntime, self).__init__(spec_filename)
 
-    def get_hdfs_working_dir(self, path=""):
-        ps = self.settings
-        glb_vars = ps.GlobalParam
-        return os.path.join(self.hdfs_root, 'tmp/zetjob', glb_vars['userName'], "job%s" % glb_vars['jobId'], "blk%s" % glb_vars['blockId'], path)
-
-    def clean_hdfs_working_dir(self):
-        hdfs_working_dir = self.get_hdfs_working_dir()
-        if not clean_hdfs_path(hdfs_working_dir):
-            # TODO : refactor to 'HdfsException'
-            raise Exception("Can not clean hdfs path : %s" % hdfs_working_dir)
-
-    def clean_working_dir(self):
-        self.clean_hdfs_working_dir()
+    def files_uploader(self, local_dir):
+        return self.hdfs_upload_dir(local_dir)
 
     def pig_output_builder(self, output_name, output_obj):
         glb_vars = self.settings.GlobalParam
         return os.path.join(self.get_hdfs_working_dir(), "OUTPUT_%s" % output_name)
+
+    def pig_output_builder(self, output_name, output_obj):
+        # TODO: refactor this method
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+        out_type = output_obj.types[0]
+        if out_type.startswith("pig.hdfs."):
+            return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
+        else:
+            raise ValueError("Invalid type for pig, type must start with 'pig.hdfs.'")
 
     def header_builder(self, uploaded_jars):
         # Build Output Tables
@@ -515,11 +526,16 @@ class PigRuntime(ZetRuntime):
                 itertools.chain(
                     ["%%declare PARAM_%s '%s'" % (k,v) for k,v in self.settings.Param._asdict().items()],
                     ["%%declare INPUT_%s '%s'" % (k,v.val) for k,v in self.settings.Input._asdict().items()],
-                    ["%%declare OUTPUT_%s '%s'" % (k,v.val) for k,v in self.settings.Output._asdict().items()]))
+                    ["%%declare OUTPUT_%s '%s'" % (k,v.val) for k,v in self.settings.Output._asdict().items()],
+                    ["REGISTER '%s';" % f for f in uploaded_jars]
+                ))
 
-    def generate_script(self, hive_script, target_filename=None):
-        # TODO: UDF jars
-        uploaded_jars = []
+    def generate_script(self, pig_script, target_filename=None):
+        if 'UDF_DIR' in self.settings.Param._asdict():
+            jar_dir = self.settings.Param.UDF_DIR
+            uploaded_jars = self.files_uploader(jar_dir.val)
+        else:
+            uploaded_jars = []
 
         # Build Input, Output and Param
         header = self.header_builder(uploaded_jars)
@@ -529,7 +545,7 @@ class PigRuntime(ZetRuntime):
             tmp_file.close()
             target_filename = tmp_file.name
 
-        with open(hive_script, "r") as f, open(target_filename, "w+") as out_f:
+        with open(pig_script, "r") as f, open(target_filename, "w+") as out_f:
             out_f.write("/*************************\n")
             out_f.write(" * Header\n")
             out_f.write(" *************************/\n")
@@ -558,9 +574,50 @@ class PigRuntime(ZetRuntime):
 
         self.generate_pig_conf()
         generated_pig_script = self.generate_script(pig_script)
-        os.system("cat %s" % generated_pig_script)
+        print("========= Generated Pig Script =========")
+        print(open(generated_pig_script).read())
+        print("=========================================")
+        print("EmrHiveRuntime.execute()")
         ret = os.system("pig -x mapreduce -P /home/run/pig.properties %s" % generated_pig_script)
         print(ret)
+
+class EmrPigRuntime(EmrRuntime, PigRuntime):
+    def __init__(self, spec_filename="spec.json"):
+        super(EmrPigRuntime, self).__init__(spec_filename)
+
+    def pig_output_builder(self, output_name, output_obj):
+        # TODO : should refactor this function to base class
+        ps = self.settings
+        glb_vars = ps.GlobalParam
+        out_type = output_obj.types[0]
+        if out_type.startswith("pig.hdfs."):
+            return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
+        elif out_type.startswith("pig.s3."):
+            return self.get_s3_working_dir("OUTPUT_%s" % output_name)
+        else:
+            raise ValueError("Invalid type for pig, type must start with 'pig.hdfs.' or 'pig.s3.'")
+
+    def files_uploader(self, local_dir):
+        return self.hdfs_upload_dir(local_dir)
+            
+    def emr_execute_pig(self, pig_filename):
+        from boto.emr.step import PigStep
+        s3_pig_script = self.s3_upload(pig_filename)
+        pig_step = PigStep(name=self.get_emr_job_name(), pig_file=s3_pig_script)
+        self.emr_conn.add_jobflow_steps(self.job_flow_id, steps=[pig_step])
+        emr_wait_job(self.emr_conn, self.job_flow_id)
+
+    def execute(self, pig_script):
+        self.clean_working_dir()
+
+        # TODO: upload S3 additional files
+
+        generated_pig_script = self.generate_script(pig_script)
+        print("========= Generated Pig Script =========")
+        print(open(generated_pig_script).read())
+        print("=========================================")
+        print("EmrHiveRuntime.execute()")
+        self.emr_execute_pig(generated_pig_script)
 
 # Utility Functions
 def clean_hdfs_path(p):
@@ -629,8 +686,12 @@ def emr_wait_job(emr_conn, job_flow_id):
         jf_state = emr_conn.describe_jobflow(job_flow_id).state
         print("jobflow_state = %s" % jf_state)
         if jf_state not in blocking_states:
-            print("Job done or failed, continue...")
-            return True
+            if jf_state == 'WAITING':
+                print("Job done, continue...")
+                return True
+            else:
+                print("Job may failed.")
+                return False
         cnt = cnt - 1
         time.sleep(10)
     return False

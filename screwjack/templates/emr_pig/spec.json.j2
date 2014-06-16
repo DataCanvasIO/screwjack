@@ -4,7 +4,32 @@
     "Version" : "{{ Version }}",
     "CategoryTags": [],
     "Cmd" : "/usr/bin/python main.py",
-    "Param" : { },
+    "Param" : {
+        "UDF_DIR": {
+            "Default": "./resources/udfs",
+            "Type": "string"
+        },
+        "AWS_ACCESS_KEY_ID": {
+            "Default": "",
+            "Type": "string"
+        },
+        "AWS_ACCESS_KEY_SECRET": {
+            "Default": "",
+            "Type": "string"
+        },
+        "S3_BUCKET": {
+            "Default": "",
+            "Type": "string"
+        },
+        "AWS_Region": {
+            "Default": "",
+            "Type": "string"
+        },
+        "EMR_jobFlowId": {
+            "Default": "",
+            "Type": "string"
+        }
+    },
     "Input" : { },
     "Output" : { }
 }

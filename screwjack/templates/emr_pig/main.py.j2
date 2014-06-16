@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from specparser import get_settings_from_file
+from specparser import EmrPigRuntime
 
 
 def main():
-    settings = get_settings_from_file("spec.json")
-    print(settings)
 
-    # TODO: Add your code here
+    emr_pig_runtime = EmrPigRuntime()
+    emr_pig_runtime.execute("main.pig")
 
     print("Done")
 
