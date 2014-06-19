@@ -504,10 +504,6 @@ class PigRuntime(HadoopRuntime):
         return self.hdfs_upload_dir(local_dir)
 
     def pig_output_builder(self, output_name, output_obj):
-        glb_vars = self.settings.GlobalParam
-        return os.path.join(self.get_hdfs_working_dir(), "OUTPUT_%s" % output_name)
-
-    def pig_output_builder(self, output_name, output_obj):
         # TODO: refactor this method
         ps = self.settings
         glb_vars = ps.GlobalParam
@@ -585,6 +581,9 @@ class EmrPigRuntime(EmrRuntime, PigRuntime):
     def __init__(self, spec_filename="spec.json"):
         super(EmrPigRuntime, self).__init__(spec_filename)
 
+    def files_uploader(self, local_dir):
+        return self.s3_upload_dir(local_dir)
+
     def pig_output_builder(self, output_name, output_obj):
         # TODO : should refactor this function to base class
         ps = self.settings
@@ -597,9 +596,6 @@ class EmrPigRuntime(EmrRuntime, PigRuntime):
         else:
             raise ValueError("Invalid type for pig, type must start with 'pig.hdfs.' or 'pig.s3.'")
 
-    def files_uploader(self, local_dir):
-        return self.hdfs_upload_dir(local_dir)
-            
     def emr_execute_pig(self, pig_filename):
         from boto.emr.step import PigStep
         s3_pig_script = self.s3_upload(pig_filename)
