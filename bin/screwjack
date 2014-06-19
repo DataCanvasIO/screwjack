@@ -131,7 +131,8 @@ def gen_dummy_global_param(username=None):
     }
 
 class ZetModule(object):
-    def __init__(self, username, module_home=None, keep_files=False, fast_build=True):
+    def __init__(self, username, module_home=None, keep_files=False, fast_build=True, spec_server=None):
+        self.spec_server = spec_server
         self.module_home = os.path.abspath(module_home or '.')
         self.username = username
         self.keep_files = keep_files
@@ -169,14 +170,24 @@ def gen_base_image_option(module_type):
                         default=default_base_image,
                         help="Base Image")
 
+
+
 @click.group()
 @click.option('--username', envvar='DATACANVAS_USERNAME', required=True)
 @click.option('--module-home', envvar="DATACANVAS_MODULE_HOME", default=".")
 @click.option('--keep-files/--no-keep-files', envvar='DATACANVAS_KEEP_FILES', default=False)
 @click.option('--fast-build/--full-build', envvar='DATACANVAS_KEEP_FILES', default=True)
+@click.option('--spec_server', envvar='DATACANVAS_SPEC_SERVER', required=False)
 @click.pass_context
-def cli(ctx, username, module_home, keep_files, fast_build):
-    ctx.obj = ZetModule(username, module_home, keep_files, fast_build)
+def cli(ctx, username, module_home, keep_files, fast_build, spec_server):
+    ctx.obj = ZetModule(username, module_home, keep_files, fast_build, spec_server)
+
+@cli.command(short_help="Show version of Screwjack")
+@click.pass_context
+def version(ctx):
+    import screwjack
+    click.echo('Version %s' % screwjack.__version__)
+    ctx.exit()
 
 class InitCLI(click.MultiCommand):
     def list_commands(self, ctx):
@@ -324,22 +335,57 @@ def output_del(ctx, output_key):
 def package(ctx):
     internal_package()
 
-@cli.command(short_help="Submit current module to spec_server.")
-@click.option('--creator-id', prompt="Spec creator id", required=True,
-              default=1)
-@click.option('--spec-server', prompt="Spec Server URL", required=True,
-              default="http://127.0.0.1:3000/spec/push?creator=1")
+@cli.command(short_help="Login to spec_server")
+@click.option('--password', prompt=True, hide_input=True)
 @click.pass_context
-def submit(ctx, creator_id, spec_server):
+def login(ctx, password):
+    if not ctx.obj.username:
+        click.echo("Please input username")
+        ctx.exit()
+    if not ctx.obj.spec_server:
+        click.echo("Please input spec_server")
+        ctx.exit()
+
+    click.echo("Logining into spec_server:'%s'" % ctx.obj.spec_server)
+
+    cfg = SafeConfigParser()
+    cfg.read(os.path.expanduser("~/.screwjack.cfg"))
+    if not cfg.has_section('user'):
+        cfg.add_section('user')
+    cfg.set('user', 'username', ctx.obj.username)
+    cfg.set('user', 'spec_server', ctx.obj.spec_server)
+    cfg.write(open(os.path.expanduser("~/.screwjack.cfg"), "w"))
+
+    # login into spec_server
+    import requests
+    spec_server_url = "http://%s/register" % ctx.obj.spec_server
+    spec_server_payload = {"user": ctx.obj.username, "passwd": password}
+    r = requests.post(spec_server_url, data=json.dumps(spec_server_payload),
+                      headers={'Content-type': 'application/json'})
+    if r.status_code == 200:
+        cfg.set('user', 'spec_auth', r.json()['token'])
+        cfg.write(open(os.path.expanduser("~/.screwjack.cfg"), "w"))
+    else:
+        click.echo("Failed to login into server:")
+        print(r.text)
+
+@cli.command(short_help="Submit current module to spec_server.")
+@click.pass_context
+def submit(ctx):
     import requests
     sj = safe_get_spec_json(ctx)
     filename = "%s-%s.tar" % (sj['Name'].lower(), sj['Version'])
     if not os.path.exists(filename):
         internal_package()
 
-    import urlparse
+    spec_server = "http://%s/spec/push?user=%s" % (ctx.obj.spec_server, ctx.obj.username)
+
+    cfg = SafeConfigParser()
+    cfg.read(os.path.expanduser("~/.screwjack.cfg"))
+
     r = requests.post(spec_server,
-                      files={'moduletar': open(filename, "rb")})
+                      files={'moduletar': open(filename, "rb")},
+                      headers={'x-spec-auth' : cfg.get('user', 'spec_auth')})
     if r.status_code != 200:
         print("ERROR : Failed to submit")
         print(r.text)
@@ -559,7 +605,13 @@ if __name__ == "__main__":
     else:
         cfg = SafeConfigParser()
         cfg.read(os.path.expanduser("~/.screwjack.cfg"))
+        default_map = {}
         if cfg.has_section('user') and cfg.has_option('user', 'username'):
-            cli(default_map={'username' : cfg.get('user', 'username')})
+            default_map['username'] = cfg.get('user', 'username')
+        if cfg.has_section('user') and cfg.has_option('user', 'spec_server'):
+            default_map['spec_server'] = cfg.get('user', 'spec_server')
+
+        if default_map:
+            cli(default_map=default_map)
         else:
             cli()
