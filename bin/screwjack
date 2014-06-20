@@ -75,7 +75,13 @@ def check_docker_image(image_name):
     return (p.wait() == 0)
 
 def get_working_root(io_params):
-    return os.path.commonprefix(map(os.path.realpath, io_params.values()))
+    common_path = os.path.commonprefix(map(os.path.realpath, io_params.values()))
+    if os.path.isfile(common_path):
+        return os.path.dirname(common_path)
+    elif os.path.isdir(common_path):
+        return common_path
+    else:
+        raise Exception("Invalid path type")
 
 def map_to_dockerpath(io_params, docker_working_root="/zetdata"):
     if len(io_params) == 0:
