@@ -172,7 +172,7 @@ defined output parameter will be created and written into the
 ``output.param``. If the test finished successfully, we could get the a
 s3 directory in output.param. Here we get
 ``s3://get-hot-token-kk/zetjob/your_username/job456/blk789/OUTPUT_hot_token_topN_s3_dir``.
-Let us open the file on s3 and we get the hotest 10 token among the
+Let us open the file on s3 and we get the hotest 10 tokens among the
 query.
 
 ::
