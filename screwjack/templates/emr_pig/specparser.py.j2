@@ -32,7 +32,7 @@
 """
 A minimum spec.json parser.
 """
-__version__ = "0.2.2"
+__version__ = "0.2.7"
 __author__ = "xiaolin"
 
 import json
@@ -368,12 +368,12 @@ class HiveRuntime(HadoopRuntime):
         ps = self.settings
         glb_vars = ps.GlobalParam
         out_type = output_obj.types[0]
-        if out_type.startswith("hive.table."):
+        if out_type.startswith("hive.table"):
             return "zetjob_%s_job%s_blk%s_OUTPUT_%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'], output_name)
-        elif out_type.startswith("hive.hdfs."):
+        elif out_type.startswith("hive.hdfs"):
             return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
         else:
-            raise ValueError("Invalid type for hive, type must start with 'hive.table.' or 'hive.hdfs.'")
+            raise ValueError("Invalid type for hive, type must start with 'hive.table' or 'hive.hdfs'")
 
     def header_builder(self, hive_ns, uploaded_files, uploaded_jars):
         # Build Output Tables
@@ -447,14 +447,14 @@ class EmrHiveRuntime(EmrRuntime, HiveRuntime):
         ps = self.settings
         glb_vars = ps.GlobalParam
         out_type = output_obj.types[0]
-        if out_type.startswith("hive.table."):
+        if out_type.startswith("hive.table"):
             return "zetjob_%s_job%s_blk%s_OUTPUT_%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'], output_name)
-        elif out_type.startswith("hive.hdfs."):
+        elif out_type.startswith("hive.hdfs"):
             return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
-        elif out_type.startswith("hive.s3."):
+        elif out_type.startswith("hive.s3"):
             return self.get_s3_working_dir("OUTPUT_%s" % output_name)
         else:
-            raise ValueError("Invalid type for hive, type must start with 'hive.table.' or 'hive.hdfs.' or 'hive.s3.'")
+            raise ValueError("Invalid type for hive, type must start with 'hive.table' or 'hive.hdfs' or 'hive.s3'")
 
     def files_uploader(self, local_dir):
         return self.s3_upload_dir(local_dir)
@@ -508,10 +508,10 @@ class PigRuntime(HadoopRuntime):
         ps = self.settings
         glb_vars = ps.GlobalParam
         out_type = output_obj.types[0]
-        if out_type.startswith("pig.hdfs."):
+        if out_type.startswith("pig.hdfs"):
             return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
         else:
-            raise ValueError("Invalid type for pig, type must start with 'pig.hdfs.'")
+            raise ValueError("Invalid type for pig, type must start with 'pig.hdfs'")
 
     def header_builder(self, uploaded_jars):
         # Build Output Tables
@@ -589,12 +589,12 @@ class EmrPigRuntime(EmrRuntime, PigRuntime):
         ps = self.settings
         glb_vars = ps.GlobalParam
         out_type = output_obj.types[0]
-        if out_type.startswith("pig.hdfs."):
+        if out_type.startswith("pig.hdfs"):
             return self.get_hdfs_working_dir("OUTPUT_%s" % output_name)
-        elif out_type.startswith("pig.s3."):
+        elif out_type.startswith("pig.s3"):
             return self.get_s3_working_dir("OUTPUT_%s" % output_name)
         else:
-            raise ValueError("Invalid type for pig, type must start with 'pig.hdfs.' or 'pig.s3.'")
+            raise ValueError("Invalid type for pig, type must start with 'pig.hdfs' or 'pig.s3'")
 
     def emr_execute_pig(self, pig_filename):
         from boto.emr.step import PigStep
