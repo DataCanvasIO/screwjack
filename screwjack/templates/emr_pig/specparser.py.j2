@@ -32,7 +32,7 @@
 """
 A minimum spec.json parser.
 """
-__version__ = "0.2.7"
+__version__ = "0.2.8"
 __author__ = "xiaolin"
 
 import json
@@ -87,9 +87,17 @@ class Input(str):
     def as_file(self, mode="r"):
         return open(self.x, mode)
 
+    def as_datasource(self, mode="r"):
+        ds = json.loads(open(self.x, mode).read())
+        return ds
+
     @property
     def val(self):
-        return self.as_first_line()
+        # TODO: fix types handling
+        if "datasource" in self._types:
+            return self.as_datasource()['URL']
+        else:
+            return self.as_first_line()
 
     @property
     def types(self):
@@ -264,7 +272,7 @@ class HadoopRuntime(ZetRuntime):
             return
 
         if not os.path.isdir(local_dir):
-            raise Exception("Failed to find local directory %s" % local_dir)
+            return
 
         hdfs_upload_dir = self.get_hdfs_working_dir(local_dir)
         ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
@@ -325,7 +333,7 @@ class EmrRuntime(HadoopRuntime):
             return
 
         if not os.path.isdir(local_dir):
-            raise Exception("Failed to find local directory %s" % local_dir)
+            return
 
         s3_upload_dir = self.get_s3_working_dir(local_dir)
         ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
