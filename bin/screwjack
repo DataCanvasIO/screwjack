@@ -384,20 +384,43 @@ def submit(ctx):
     if not os.path.exists(filename):
         internal_package()
 
-    spec_server = "http://%s/spec/push?user=%s" % (ctx.obj.spec_server, ctx.obj.username)
+    spec_push_url = "http://%s/spec/push?user=%s" % (ctx.obj.spec_server, ctx.obj.username)
 
     cfg = SafeConfigParser()
     cfg.read(os.path.expanduser("~/.screwjack.cfg"))
 
-    r = requests.post(spec_server,
+    r = requests.post(spec_push_url,
                       files={'moduletar': open(filename, "rb")},
                       headers={'x-spec-auth' : cfg.get('user', 'spec_auth')})
     if r.status_code != 200:
         print("ERROR : Failed to submit")
         print(r.text)
-        print(spec_server)
+        print(spec_push_url)
     else:
-        print("Sucessful submit module %s" % filename)
+
+        def async_wait_submit(job_id):
+            print("Waiting :'%s'" % job_id)
+            while True:
+                time.sleep(1)
+                spec_status_url = "http://%s/status" % (ctx.obj.spec_server, ctx.obj.username)
+
+                r = requests.get(spec_status_url,
+                                 headers={'x-spec-auth' : cfg.get('user', 'spec_auth')}).json()
+                if r['status'] == 'success':
+                    return True
+                elif r['status'] == 'pending':
+                    continue
+                elif r['status'] == 'failed':
+                    print("Failed to build : '%s'" % r['message'])
+                    return False
+                else:
+                    print("Unknow status : '%s'" % r['status'])
+                    return False
+
+        if async_wait_submit(r.json()["id"]):
+            print("Sucessful submit module %s" % filename)
+        else:
+            print("Failed to submit module %s" % filename)
 
 class RunCLI(click.MultiCommand):
     def list_commands(self, ctx):
