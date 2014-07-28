@@ -1,4 +1,4 @@
-#!/home/xiaolin/py-virt/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """A command line tool for manipulating docker modules.
 """
@@ -17,6 +17,7 @@ import commands
 from pytz import UTC
 from ConfigParser import SafeConfigParser
 import getpass
+import requests
 
 try:
     import screwjack
@@ -44,7 +45,7 @@ def gettype(name):
 def param_check(param_name, param_type):
     if param_type not in param_type_map.keys():
         raise ValueError("Invalid type for %s" % param_name)
-    
+
     if not re.match("^[A-Za-z0-9_]+$", param_name):
         raise ValueError("Invalid Param name '%s'. Param type must be '[A-Za-z0-9_]*'" % param_name)
 
@@ -363,7 +364,6 @@ def login(ctx, password):
     cfg.write(open(os.path.expanduser("~/.screwjack.cfg"), "w"))
 
     # login into spec_server
-    import requests
     spec_server_url = "http://%s/register" % ctx.obj.spec_server
     spec_server_payload = {"user": ctx.obj.username, "passwd": password}
     r = requests.post(spec_server_url, data=json.dumps(spec_server_payload),
@@ -378,7 +378,6 @@ def login(ctx, password):
 @cli.command(short_help="Submit current module to spec_server.")
 @click.pass_context
 def submit(ctx):
-    import requests
     sj = safe_get_spec_json(ctx)
     filename = "%s-%s.tar" % (sj['Name'].lower(), sj['Version'])
     if not os.path.exists(filename):
@@ -396,33 +395,15 @@ def submit(ctx):
         print("ERROR : Failed to submit")
         print(r.text)
         print(spec_push_url)
+        sys.exit(-1)
     else:
-
-        def async_wait_submit(job_id):
-            print("Waiting :'%s'" % job_id)
-            while True:
-                time.sleep(1)
-                spec_status_url = "http://%s/status" % ctx.obj.spec_server
-
-                r = requests.get(spec_status_url,
-                        params={"id" : job_id},
-                        headers={'x-spec-auth' : cfg.get('user', 'spec_auth')}).json()
-                if r['status'] == 'success':
-                    return True
-                elif r['status'] == 'pending':
-                    continue
-                elif r['status'] == 'failed':
-                    print("Failed to build : '%s'" % r['message'])
-                    return False
-                else:
-                    print("Unknow status : '%s'" % r['status'])
-                    return False
-
         print(r.text)
-        if async_wait_submit(r.json()["id"]):
-            print("Sucessful submit module %s" % filename)
+        if not async_wait_submit(ctx, r.json()["id"]):
+            print("ERROR : Failed to submit module %s" % filename)
+            sys.exit(-2)
         else:
-            print("Failed to submit module %s" % filename)
+            print("Sucessful submit module %s" % filename)
+            sys.exit(0)
 
 class RunCLI(click.MultiCommand):
     def list_commands(self, ctx):
@@ -629,6 +610,26 @@ def query_yes_no(question, default="yes"):
         else:
             sys.stdout.write("Please respond with 'yes' or 'no' "\
                              "(or 'y' or 'n').\n")
+
+def async_wait_submit(ctx, job_id):
+    print("Waiting :'%s'" % job_id)
+    while True:
+        time.sleep(1)
+        spec_status_url = "http://%s/status" % ctx.obj.spec_server
+
+        r = requests.get(spec_status_url,
+                params={"id" : job_id},
+                headers={'x-spec-auth' : cfg.get('user', 'spec_auth')}).json()
+        if r['status'] == 'success':
+            return True
+        elif r['status'] == 'pending':
+            continue
+        elif r['status'] == 'failed':
+            print("Failed to build : '%s'" % r['message'])
+            return False
+        else:
+            print("Unknow status : '%s'" % r['status'])
+            return False
 
 if __name__ == "__main__":
     if 'DATACANVAS_USERNAME' in os.environ:
