@@ -381,20 +381,19 @@ templateType_map = OrderedDict([
     ("emr_hive", 3),
     ("emr_pig", 4)])
 
-@cli.command(short_help="Submit current module to spec_server.")
-@click.option("--templateType", type=click.Choice(templateType_map.keys()), default='none')
-@click.pass_context
-def submit(ctx, templateType):
+def internal_submit(spec_push_url, ctx, templateType):
+    """
+    A internal function to submit/import module to spec_server.
+    """
+
     sj = safe_get_spec_json(ctx)
     filename = "%s-%s.tar" % (sj['Name'].lower(), sj['Version'])
     if not os.path.exists(filename):
         internal_package()
 
-    spec_push_url = "http://%s/spec/push" % ctx.obj.spec_server
     spec_push_params = {
             "user" : ctx.obj.username,
             "templateType" : templateType_map[templateType]}
-    # spec_push_params = { "user" : ctx.obj.username }
 
     cfg = SafeConfigParser()
     cfg.read(os.path.expanduser("~/.screwjack.cfg"))
@@ -417,6 +416,20 @@ def submit(ctx, templateType):
         else:
             print("Sucessful submit module %s" % filename)
             sys.exit(0)
+
+@cli.command(short_help="Submit current module to spec_server.")
+@click.option("--templateType", type=click.Choice(templateType_map.keys()), default='none')
+@click.pass_context
+def submit(ctx, templateType):
+    spec_push_url = "http://%s/spec/push" % ctx.obj.spec_server
+    internal_submit(spec_push_url, ctx, templateType)
+
+@cli.command(short_help="Import current module to spec_server.")
+@click.option("--templateType", type=click.Choice(templateType_map.keys()), default='none')
+@click.pass_context
+def submit_import(ctx, templateType):
+    spec_push_url = "http://%s/spec/import" % ctx.obj.spec_server
+    internal_submit(spec_push_url, ctx, templateType)
 
 class RunCLI(click.MultiCommand):
     def list_commands(self, ctx):
