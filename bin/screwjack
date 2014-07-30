@@ -9,7 +9,6 @@ import os
 import re
 import sys
 from collections import OrderedDict
-from itertools import izip, chain
 from dateutil.parser import parse
 from datetime import datetime
 import time
@@ -375,26 +374,40 @@ def login(ctx, password):
         click.echo("Failed to login into server:")
         print(r.text)
 
+templateType_map = OrderedDict([
+    ("none", 0),
+    ("hive", 1),
+    ("pig", 2),
+    ("emr_hive", 3),
+    ("emr_pig", 4)])
+
 @cli.command(short_help="Submit current module to spec_server.")
+@click.option("--templateType", type=click.Choice(templateType_map.keys()), default='none')
 @click.pass_context
-def submit(ctx):
+def submit(ctx, templateType):
     sj = safe_get_spec_json(ctx)
     filename = "%s-%s.tar" % (sj['Name'].lower(), sj['Version'])
     if not os.path.exists(filename):
         internal_package()
 
-    spec_push_url = "http://%s/spec/push?user=%s" % (ctx.obj.spec_server, ctx.obj.username)
+    spec_push_url = "http://%s/spec/push" % ctx.obj.spec_server
+    spec_push_params = {
+            "user" : ctx.obj.username,
+            "templateType" : templateType_map[templateType]}
+    # spec_push_params = { "user" : ctx.obj.username }
 
     cfg = SafeConfigParser()
     cfg.read(os.path.expanduser("~/.screwjack.cfg"))
 
     r = requests.post(spec_push_url,
                       files={'moduletar': open(filename, "rb")},
-                      headers={'x-spec-auth' : cfg.get('user', 'spec_auth')})
+                      headers={'x-spec-auth' : cfg.get('user', 'spec_auth')},
+                      params=spec_push_params)
+
     if r.status_code != 200:
         print("ERROR : Failed to submit")
         print(r.text)
-        print(spec_push_url)
+        print(r.url)
         sys.exit(-1)
     else:
         print(r.text)
