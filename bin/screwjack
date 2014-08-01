@@ -578,7 +578,7 @@ dsTypeMap = OrderedDict([
     ("local_file", "LocalFile"),
     ("http", "Http"),
     ("ftp", "Ftp"),
-    ("s3", "AWS S3"),
+    ("s3", "AWS_S3"),
     ("hdfs", "HDFS"),
     ("hive", "HIVE")])
 
