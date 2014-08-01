@@ -574,6 +574,30 @@ def internal_build(ctx, force):
     else:
         print("No need for rebuilding.")
 
+dsTypeMap = OrderedDict([
+    ("local_file", "LocalFile"),
+    ("http", "Http"),
+    ("ftp", "Ftp"),
+    ("s3", "AWS S3"),
+    ("hdfs", "HDFS"),
+    ("hive", "HIVE")])
+
+@cli.command(short_help="generate a datasource")
+@click.option("--ds_type", type=click.Choice(dsTypeMap.keys()),
+        default='http', required=True)
+@click.option("--ds_name", default='', required=True)
+@click.option("--ds_url", default='', required=True)
+@click.argument('meta_kvs', nargs=-1, required=False)
+@click.pass_context
+def gen_ds(ctx, ds_type, ds_name, ds_url, meta_kvs):
+    metas = {k:v for k,v in [i.split("=") for i in meta_kvs]}
+    ds = OrderedDict()
+    ds["Name"] = ds_name
+    ds["Type"] = dsTypeMap[ds_type]
+    ds["URL"] = ds_url
+    ds["Meta"] = metas
+    print json.dumps(ds, indent=4, separators=(',', ': '))
+
 @cli.command(cls=RunCLI, short_help="Run module in local/docker mode")
 @click.pass_context
 def run(ctx, *args, **kvargs):
