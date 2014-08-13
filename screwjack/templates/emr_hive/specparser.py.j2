@@ -32,12 +32,13 @@
 """
 A minimum spec.json parser.
 """
-__version__ = "0.2.9"
+__version__ = "0.2.14"
 __author__ = "xiaolin"
 
 import json
 from collections import namedtuple
 import types
+import re
 import os
 import sys
 import time
@@ -95,7 +96,7 @@ class Input(str):
     @property
     def val(self):
         # TODO: fix types handling
-        if "datasource" in self._types:
+        if any([re.match(r"datasource.*", t) for t in self._types]):
             return self.as_datasource()['URL']
         else:
             return self.as_first_line()
@@ -269,27 +270,12 @@ class HadoopRuntime(ZetRuntime):
         return "zetjobns_%s_job%s_blk%s" % (glb_vars['userName'], glb_vars['jobId'], glb_vars['blockId'])
 
     def hdfs_upload_dir(self, local_dir):
-        if local_dir == "":
-            return
-
-        if not os.path.isdir(local_dir):
-            return
-
-        hdfs_upload_dir = self.get_hdfs_working_dir(local_dir)
-        ext_files = [f for f in sorted(os.listdir(local_dir)) if os.path.isfile(os.path.join(local_dir,f))]
-        for f in ext_files:
-            # f_remote = os.path.join(hdfs_upload_dir, local_dir, f)
-            # f_remote_dir = os.path.dirname(f_remote)
-            f_local = os.path.join(local_dir, f)
-            f_remote_dir = self.get_hdfs_working_dir(f_local)
-            if cmd("hadoop fs -mkdir -p %s" % f_remote_dir) != 0:
-                raise Exception("Failed to create dir %s" % f_remote_dir)
-            print("HDFS Upload :: %s ====> %s" % (f, f_remote_dir))
-            print("hadoop fs -copyFromLocal %s %s" % (os.path.join(local_dir, f), os.path.join(f_remote_dir)))
-            if cmd("hadoop fs -copyFromLocal %s %s" % (os.path.join(local_dir, f), f_remote_dir)) == 0:
-                yield os.path.join(f_remote_dir)
-            else:
-                raise Exception("Failed to upload file %s to %s" % (f_local, f_remote_dir))
+        for root_dir, dirs, files in os.walk(local_dir):
+            for f in sorted(files):
+                f = os.path.normpath(os.path.join(root_dir, f))
+                f_remote = self.get_hdfs_working_dir(f)
+                hdfs_safe_upload(f, f_remote)
+                yield f_remote
 
     def hdfs_clean_working_dir(self):
         hdfs_working_dir = self.get_hdfs_working_dir()
@@ -629,6 +615,14 @@ def clean_hdfs_path(p):
         return True
     else:
         return False
+
+def hdfs_safe_upload(f_local, f_remote):
+    f_remote_dir = os.path.dirname(f_remote)
+    if cmd("hadoop fs -mkdir -p %s" % f_remote_dir) != 0:
+        raise Exception("Failed to create dir %s" % f_remote_dir)
+    print("HDFS Upload :: %s ====> %s" % (f_local, f_remote))
+    if cmd("hadoop fs -copyFromLocal %s %s" % (f_local, f_remote_dir)) != 0:
+        raise Exception("Failed to upload file %s to %s" % (f_local, f_remote_dir))
 
 def percent_cb(complete, total):
     sys.stdout.write('.')
