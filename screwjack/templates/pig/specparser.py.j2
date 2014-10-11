@@ -32,7 +32,7 @@
 """
 A minimum spec.json parser.
 """
-__version__ = "0.2.14"
+__version__ = "0.2.15"
 __author__ = "xiaolin"
 
 import json
@@ -481,15 +481,14 @@ class EmrJarRuntime(EmrRuntime):
         from boto.emr.step import JarStep
 
         s3_jar_path = s3_upload(self.s3_bucket, jar_path, self.get_s3_working_dir(jar_path))
-        # s3_jar_path = "s3://run-jars/jar/mahout-core-1.0-SNAPSHOT-job.jar"
         print("Uploading jar to s3 : %s -> %s" % (jar_path, s3_jar_path))
 
         print("Add jobflow step")
-        step = JarStep(name='cl_filter', jar=s3_jar_path, step_args=args)
-        self.emr_conn.add_jobflow_steps(self.job_flow_id, steps=[step])
+        step = JarStep(name=self.get_emr_job_name(), jar=s3_jar_path, step_args=args)
+        ret_steps = self.emr_conn.add_jobflow_steps(self.job_flow_id, steps=[step])
 
-        print("Waiting jobflow step done")
-        emr_wait_job(self.emr_conn, self.job_flow_id)
+        print("Waiting jobflow steps...")
+        return emr_wait_steps(self.emr_conn, self.job_flow_id, ret_steps)
 
 class PigRuntime(HadoopRuntime):
     def __init__(self, spec_filename="spec.json"):
@@ -547,6 +546,7 @@ class PigRuntime(HadoopRuntime):
             out_f.write(" *************************/\n")
             out_f.write("\n")
             out_f.write(f.read())
+            out_f.write("\n")
 
         return target_filename
 
@@ -638,8 +638,11 @@ def s3_delete(bucket, s3_path):
     return True
 
 def s3_upload(bucket, local_filename, remote_filename):
-    import boto
     from urlparse import urlparse
+    if urlparse(local_filename).scheme in ["s3", "s3n"]:
+        return local_filename
+    
+    import boto
     # max size in bytes before uploading in parts.
     # between 1 and 5 GB recommended
     MAX_SIZE = 40 * 1000 * 1000
@@ -676,23 +679,21 @@ def s3_upload(bucket, local_filename, remote_filename):
 
     return fn_remote_full
 
-def emr_wait_job(emr_conn, job_flow_id):
-    blocking_states = ['STARTING', 'BOOTSTRAPPING', 'RUNNING']
-    cnt = 60 * 60 * 1 # 1 hour
-    time.sleep(10)
-    while cnt > 0:
-        jf_state = emr_conn.describe_jobflow(job_flow_id).state
-        print("jobflow_state = %s" % jf_state)
-        if jf_state not in blocking_states:
-            if jf_state == 'WAITING':
-                print("Job done, continue...")
-                return True
+def emr_wait_steps(emr_conn, job_flow_id, job_steps):
+    for step_id in job_steps.stepids:
+        while True:
+            ret = emr_conn.describe_step(job_flow_id, step_id.value)
+            step_state = ret.status.state
+            print "Wait EMR jobflow step: jobflow_id='%s' step_id='%s' state='%s'" % \
+                (job_flow_id, step_id.value, step_state)
+            if step_state in ["PENDING", "RUNNING", "CONTINUE"]:
+                time.sleep(10)
+                continue
+            elif step_state in ['COMPLETED']:
+                break
             else:
-                print("Job may failed.")
                 return False
-        cnt = cnt - 1
-        time.sleep(10)
-    return False
+    return True
 
 def cmd(cmd_str):
     print("Execute External Command : '%s'" % cmd_str)

@@ -1,0 +1,17 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from specparser import EmrHiveRuntime
+
+def main():
+    ejr = EmrJarRuntime()
+    jar_step_args = []
+    
+    # TODO: Execute your jar
+    # Method 1 : Execute local jar
+    # ejr.execute("./your_project.jar", jar_step_args)
+    # Method 2 : Execute jar in s3
+    # ejr.execute("s3n://your_bucket/your_project.jar", jar_step_args)
+
+if __name__ == "__main__":
+    main()

@@ -166,7 +166,7 @@ def gen_base_image_option(module_type):
         default_base_image = "zetdata/cdh:4"
     elif module_type == 'pig':
         default_base_image = "zetdata/cdh:4"
-    elif module_type == 'emr_hive':
+    elif module_type in ['emr_hive', 'emr_jar']:
         default_base_image = "zetdata/ubuntu:trusty"
     else:
         default_base_image = "zetdata/ubuntu:trusty"
@@ -197,7 +197,7 @@ def version(ctx):
 
 class InitCLI(click.MultiCommand):
     def list_commands(self, ctx):
-        rv = ['basic', 'hive', 'pig', 'emr_hive', 'emr_pig']
+        rv = ['basic', 'hive', 'pig', 'emr_hive', 'emr_pig', 'emr_jar']
         return rv
 
     def get_command(self, ctx, module_type):
