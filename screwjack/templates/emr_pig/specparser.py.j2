@@ -32,7 +32,7 @@
 """
 A minimum spec.json parser.
 """
-__version__ = "0.2.15"
+__version__ = "0.2.17"
 __author__ = "xiaolin"
 
 import json
@@ -488,7 +488,8 @@ class EmrJarRuntime(EmrRuntime):
         ret_steps = self.emr_conn.add_jobflow_steps(self.job_flow_id, steps=[step])
 
         print("Waiting jobflow steps...")
-        return emr_wait_steps(self.emr_conn, self.job_flow_id, ret_steps)
+        if not emr_wait_steps(self.emr_conn, self.job_flow_id, ret_steps):
+            raise Exception("EmrJarRuntime : failed to execute steps")
 
 class PigRuntime(HadoopRuntime):
     def __init__(self, spec_filename="spec.json"):
