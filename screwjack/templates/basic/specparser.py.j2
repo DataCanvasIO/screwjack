@@ -32,7 +32,7 @@
 """
 A minimum spec.json parser.
 """
-__version__ = "0.2.17"
+__version__ = "0.2.18"
 __author__ = "xiaolin"
 
 import json
@@ -661,7 +661,7 @@ def s3_upload(bucket, local_filename, remote_filename):
         print("From : %s" % fn_local)
         print("To   : %s" % fn_remote_full)
         mp = bucket.initiate_multipart_upload(fn_local)
-        fp = open(sourcepath,'rb')
+        fp = open(fn_local, 'rb')
         fp_num = 0
         while (fp.tell() < filesize):
             fp_num += 1

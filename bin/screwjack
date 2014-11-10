@@ -381,7 +381,7 @@ templateType_map = OrderedDict([
     ("emr_hive", 3),
     ("emr_pig", 4)])
 
-def internal_submit(spec_push_url, ctx, templateType):
+def internal_submit(spec_push_url, ctx, templateType, is_private=False):
     """
     A internal function to submit/import module to spec_server.
     """
@@ -393,7 +393,8 @@ def internal_submit(spec_push_url, ctx, templateType):
 
     spec_push_params = {
             "user" : ctx.obj.username,
-            "templateType" : templateType_map[templateType]}
+            "templateType" : templateType_map[templateType],
+            "private" : is_private}
 
     cfg = SafeConfigParser()
     cfg.read(os.path.expanduser("~/.screwjack.cfg"))
@@ -419,10 +420,11 @@ def internal_submit(spec_push_url, ctx, templateType):
 
 @cli.command(short_help="Submit current module to spec_server.")
 @click.option("--templateType", type=click.Choice(templateType_map.keys()), default='none')
+@click.option('--private/--public', envvar='DATACANVAS_KEEP_FILES', default=False)
 @click.pass_context
-def submit(ctx, templateType):
+def submit(ctx, templateType, private):
     spec_push_url = "http://%s/spec/push" % ctx.obj.spec_server
-    internal_submit(spec_push_url, ctx, templateType)
+    internal_submit(spec_push_url, ctx, templateType, private)
 
 @cli.command(short_help="Import current module to spec_server.")
 @click.option("--templateType", type=click.Choice(templateType_map.keys()), default='none')
