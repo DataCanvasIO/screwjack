@@ -155,7 +155,8 @@ base_images = ['zetdata/ubuntu:trusty', 'zetdata/ubuntu:14.04',
                'zetdata/ubuntu:raring', 'zetdata/ubuntu:13.04',
                'zetdata/ubuntu:precise', 'zetdata/ubuntu:12.04',
                'zetdata/ubuntu:lucid', 'zetdata/ubuntu:10.4',
-               'zetdata/sci-python:2.7', 'zetdata/cdh:4']
+               'zetdata/sci-python:2.7', 'zetdata/cdh:4',
+               'zetdata/r:3.0.2']
 
 param_types = ['integer', 'enum', 'float', 'string', 'file']
 
@@ -168,6 +169,8 @@ def gen_base_image_option(module_type):
         default_base_image = "zetdata/cdh:4"
     elif module_type in ['emr_hive', 'emr_jar']:
         default_base_image = "zetdata/ubuntu:trusty"
+    elif module_type in ['r']:
+        default_base_image = "zetdata/r:3.0.2"
     else:
         default_base_image = "zetdata/ubuntu:trusty"
 
@@ -176,6 +179,12 @@ def gen_base_image_option(module_type):
                         default=default_base_image,
                         help="Base Image")
 
+
+def get_default_entry_cmd(module_type):
+    if module_type in ['r']:
+        return "Rscript main.R"
+    else:
+        return "python main.py"
 
 
 @click.group()
@@ -197,7 +206,7 @@ def version(ctx):
 
 class InitCLI(click.MultiCommand):
     def list_commands(self, ctx):
-        rv = ['basic', 'hive', 'pig', 'emr_hive', 'emr_pig', 'emr_jar']
+        rv = ['basic', 'hive', 'pig', 'emr_hive', 'emr_pig', 'emr_jar', 'r']
         return rv
 
     def get_command(self, ctx, module_type):
@@ -251,7 +260,7 @@ class InitCLI(click.MultiCommand):
                          default="0.1",
                          help="Module Version"),
             click.Option(('--cmd', '-c'), prompt="Module Entry Command",
-                         default="/usr/bin/python main.py",
+                         default=get_default_entry_cmd(module_type),
                          help="Entry Command"),
             gen_base_image_option(module_type)
         ]

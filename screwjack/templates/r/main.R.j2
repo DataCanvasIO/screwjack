@@ -1,0 +1,15 @@
+
+# forecast with R runtime
+
+library(RDataCanvas)
+
+# First, Create a runtime object
+rt <- DCRuntime()
+print(jsonlite::toJSON(unclass(rt), pretty=TRUE, auto_unbox=TRUE))
+
+# TODO: Add your code here,
+# you can reference your Input/Output/Param like this:
+#    rt$Input$your_input$Val
+#    rt$Output$your_output$Val
+#    rt$Param$some_param$Val
+
