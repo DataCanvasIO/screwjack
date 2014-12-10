@@ -109,6 +109,10 @@ def print_spec_json(obj):
     print("Outputs")
     for k,v in obj['Output'].items():
         print("  %s(%s)" % (k, ",".join(v)))
+    if "Meta" in obj:
+        print("Meta")
+        for k,v in obj['Meta'].items():
+            print("  %s = %s" % (k, v))
 
 def gen_dummy_global_param(username=None):
     if not username:
@@ -616,6 +620,26 @@ def incr_ver(ctx):
     ver = data["Version"].split(".")
     ver[-1] = str(int(ver[-1])+1)
     data["Version"] = ".".join(ver)
+
+    with open("spec.json", "w") as sj_out:
+        sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
+    print_spec_json(data)
+
+meta_defaults = { "isDeterministic" : "true" }
+
+@cli.command(short_help="set meta")
+@click.argument('meta_key', nargs=1, type=click.Choice(meta_defaults.keys()))
+@click.argument('meta_val', nargs=-1, required=False)
+@click.pass_context
+def meta_set(ctx, meta_key, meta_val):
+    print meta_key
+    print meta_val
+    data = safe_get_spec_json(ctx)
+    data["Meta"] = data.get("Meta", {})
+    if len(meta_val) > 0:
+        data["Meta"][meta_key] = meta_val[0]
+    else:
+        data["Meta"][meta_key] = meta_defaults.get(meta_key, "")
 
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
