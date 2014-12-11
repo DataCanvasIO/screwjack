@@ -638,6 +638,9 @@ def meta_set(ctx, meta_key, meta_val):
     data["Meta"] = data.get("Meta", {})
     if len(meta_val) > 0:
         data["Meta"][meta_key] = meta_val[0]
+        # TODO : walk around fix
+        if meta_key in ["isDeterministic"]:
+            data["Meta"]["isIncremental"] = meta_val[0]
     else:
         data["Meta"][meta_key] = meta_defaults.get(meta_key, "")
 
