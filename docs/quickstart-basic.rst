@@ -42,8 +42,8 @@ Now, you will get a directory with initial verison of basic module:
       svm
       |-- Dockerfile
       |-- main.py
-      |-- spec.json
-      `-- specparser.py
+      |-- requirements.txt
+      `-- spec.json
 
       0 directories, 4 files
 
@@ -110,14 +110,14 @@ In this tutorial, we would like implement our ``main.py`` like this:
 
 .. code:: python
 
-    from specparser import get_settings_from_file
-
+    from datacanvas import DatacanvasRuntime
     from sklearn.svm import LinearSVC
     import numpy as np
     import pickle
 
     def main():
-        settings = get_settings_from_file("spec.json")
+        rt = DatacanvasRuntime()
+        settings = rt.settings
         X = np.genfromtxt(settings.Input.X, delimiter=',', skip_header=1)
         Y = np.genfromtxt(settings.Input.Y, delimiter=',', skip_header=1)
         svc = LinearSVC(C=float(settings.Param.C))
