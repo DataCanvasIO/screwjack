@@ -5,10 +5,10 @@
 FROM {{ BaseImage }}
 # MAINTAINER Your_name, Your_email_address
 
-RUN pip install boto
+ADD requirements.txt /home/run/
+RUN pip install -r /home/run/requirements.txt
 
 ADD spec.json /home/run/
 ADD main.py /home/run/
-ADD specparser.py /home/run/
 ADD main.pig /home/run/
 ADD resources /home/run/resources/
