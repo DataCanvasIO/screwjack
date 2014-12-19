@@ -18,19 +18,44 @@ from ConfigParser import SafeConfigParser
 import getpass
 import requests
 
+
 try:
     import screwjack
 except:
     sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
     import screwjack
 
+
+# TODO:
+#    1. handle Ctrl-C
+#    2. create/release EMR cluster
+
+class Cluster(object):
+    def __init__(self, params):
+        pass
+
+    def create(self):
+        pass
+
+    def terminate(self):
+        pass
+
+    def save(self):
+        pass
+
+    def check(self):
+        pass
+
+
 param_type_map = {
-    "string" : "str",
-    "integer" : "int",
-    "float" : "float",
-    "enum" : "str",
-    "file" : "str"
+    "string": "str",
+    "integer": "int",
+    "float": "float",
+    "enum": "str",
+    "file": "str",
+    "cluster": "str"
 }
+
 
 def gettype(name):
     if name not in param_type_map:
@@ -41,12 +66,14 @@ def gettype(name):
         return t
     raise ValueError(name)
 
+
 def param_check(param_name, param_type):
     if param_type not in param_type_map.keys():
         raise ValueError("Invalid type for %s" % param_name)
 
     if not re.match("^[A-Za-z0-9_]+$", param_name):
         raise ValueError("Invalid Param name '%s'. Param type must be '[A-Za-z0-9_]*'" % param_name)
+
 
 def inout_check(inout_name, inout_types, spec_json):
     if not re.match("^[A-Za-z0-9_]+$", inout_name):
@@ -62,17 +89,21 @@ def inout_check(inout_name, inout_types, spec_json):
         if not re.match("^[a-z0-9\._]+$", t):
             raise ValueError("Invalid Input/Output type '%s'. Input/Output type must be '[a-z0-9\._]+$'." % t)
 
+
 def safe_get_spec_json(ctx):
     if not ctx.obj.spec_json:
         print("Could not find 'spec.json' in current directory.")
         ctx.exit()
     return ctx.obj.spec_json
 
+
 def check_docker_image(image_name):
     from subprocess import Popen, PIPE
+
     p = Popen('docker inspect -f "{{ .id }}" %s' % image_name,
               shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
-    return (p.wait() == 0)
+    return p.wait() == 0
+
 
 def get_working_root(io_params):
     common_path = os.path.commonprefix(map(os.path.realpath, io_params.values()))
@@ -83,6 +114,7 @@ def get_working_root(io_params):
     else:
         raise Exception("Invalid path type")
 
+
 def map_to_dockerpath(io_params, docker_working_root="/zetdata"):
     if len(io_params) == 0:
         print("WARNING! None of Inputs or Outputs.")
@@ -92,53 +124,58 @@ def map_to_dockerpath(io_params, docker_working_root="/zetdata"):
     if working_root in ['', '/']:
         print("WARNING! Please arrange your data into single directory.")
 
-    docker_paths = map(lambda p:os.path.join(docker_working_root, os.path.relpath(p, working_root)), io_params.values())
     working_volume_str = "-v %s:%s" % (working_root, docker_working_root)
-    print(" ".join(["%s=%s" % (k,os.path.join(docker_working_root, os.path.relpath(v, working_root))) for k,v in io_params.viewitems()]))
-    return working_volume_str, " ".join(["%s=%s" % (k,os.path.join(docker_working_root, os.path.relpath(v, working_root))) for k,v in io_params.viewitems()])
+    print(" ".join(["%s=%s" % (k, os.path.join(docker_working_root, os.path.relpath(v, working_root)))
+                    for k, v in io_params.viewitems()]))
+    return working_volume_str, " ".join(
+        ["%s=%s" % (k, os.path.join(docker_working_root, os.path.relpath(v, working_root)))
+         for k, v in io_params.viewitems()])
+
 
 def print_spec_json(obj):
     print("Name         : %s(%s)" % (obj['Name'], obj['Version']))
     print("CategoryTags : %s" % obj['CategoryTags'])
     print("Params")
-    for k,v in obj['Param'].items():
-        print("  %s(%s) : '%s'" % (k,v['Type'], v['Default']))
+    for k, v in obj['Param'].items():
+        print("  %s(%s) : '%s'" % (k, v['Type'], v['Default']))
     print("Inputs")
-    for k,v in obj['Input'].items():
+    for k, v in obj['Input'].items():
         print("  %s(%s)" % (k, ",".join(v)))
     print("Outputs")
-    for k,v in obj['Output'].items():
+    for k, v in obj['Output'].items():
         print("  %s(%s)" % (k, ",".join(v)))
     if "Meta" in obj:
         print("Meta")
-        for k,v in obj['Meta'].items():
+        for k, v in obj['Meta'].items():
             print("  %s = %s" % (k, v))
+
 
 def gen_dummy_global_param(username=None):
     if not username:
         username = getpass.getuser()
     return {
-        "userName" : {
-            "Type" : "string",
-            "Val" : username
+        "userName": {
+            "Type": "string",
+            "Val": username
         },
-        "userId" : {
-            "Type" : "string",
-            "Val" : "123"
+        "userId": {
+            "Type": "string",
+            "Val": "123"
         },
-        "jobId" : {
-            "Type" : "string",
-            "Val" : "456"
+        "jobId": {
+            "Type": "string",
+            "Val": "456"
         },
-        "blockId" : {
-            "Type" : "string",
-            "Val" : "789"
+        "blockId": {
+            "Type": "string",
+            "Val": "789"
         },
-        "hue_server" : {
-            "Type" : "string",
-            "Val" : "http://192.168.1.20:8888/"
+        "hue_server": {
+            "Type": "string",
+            "Val": "http://192.168.1.20:8888/"
         }
     }
+
 
 class ZetModule(object):
     def __init__(self, username, module_home=None, keep_files=False, fast_build=True, spec_server=None):
@@ -154,6 +191,23 @@ class ZetModule(object):
             with open(sj_filename, "r") as sj_in:
                 self.spec_json = json.load(sj_in, object_pairs_hook=OrderedDict)
 
+    @property
+    def clusters_db(self):
+        import yaml
+
+        yaml_path = os.path.join(os.path.expanduser("~/.datacanvas.yml"))
+        obj = yaml.load(open(yaml_path).read())
+        # return {site['Host']: {c['Name']: {p['Name']: p for p in c['Parameters']}
+        #                        for c in site['Clusters']}
+        #         for site in obj}
+        return {site['Host']: {c['Name']:c for c in site['Clusters']} for site in obj}
+
+    @property
+    def clusters(self):
+        spec_server_host = self.spec_server.split(":")[0]
+        return self.clusters_db.get(spec_server_host, None)
+
+
 base_images = ['zetdata/ubuntu:trusty', 'zetdata/ubuntu:14.04',
                'zetdata/ubuntu:saucy', 'zetdata/ubuntu:13.10',
                'zetdata/ubuntu:raring', 'zetdata/ubuntu:13.04',
@@ -163,6 +217,7 @@ base_images = ['zetdata/ubuntu:trusty', 'zetdata/ubuntu:14.04',
                'zetdata/r:3.0.2']
 
 param_types = ['integer', 'enum', 'float', 'string', 'file']
+
 
 def gen_base_image_option(module_type):
     if module_type == 'basic':
@@ -201,12 +256,15 @@ def get_default_entry_cmd(module_type):
 def cli(ctx, username, module_home, keep_files, fast_build, spec_server):
     ctx.obj = ZetModule(username, module_home, keep_files, fast_build, spec_server)
 
+
 @cli.command(short_help="Show version of Screwjack")
 @click.pass_context
 def version(ctx):
     import screwjack
+
     click.echo('Version %s' % screwjack.__version__)
     ctx.exit()
+
 
 class InitCLI(click.MultiCommand):
     def list_commands(self, ctx):
@@ -237,6 +295,7 @@ class InitCLI(click.MultiCommand):
             os.makedirs(target_path)
 
             from jinja2 import Environment, PackageLoader
+
             env = Environment(loader=PackageLoader('screwjack', 'templates/%s' % module_type))
 
             for tmpl_file in env.list_templates():
@@ -253,10 +312,10 @@ class InitCLI(click.MultiCommand):
                 os.makedirs(os.path.join(target_path, "resources/udfs"))
 
             # Show Info
-            print("Sucessfully created '%s'" % target_path)
+            print("Successfully created '%s'" % target_path)
 
         params = [
-            click.Option(('--name','-n'), prompt="Module Name", required=True,
+            click.Option(('--name', '-n'), prompt="Module Name", required=True,
                          help="Module Name"),
             click.Option(('--description', '-d'), prompt="Module Description", required=True,
                          help="Module Description"),
@@ -272,10 +331,12 @@ class InitCLI(click.MultiCommand):
         return click.Command(module_type, help="Create a '%s' type of module" % module_type,
                              params=params, callback=init_callback)
 
+
 @cli.command(cls=InitCLI, short_help="Run module in local/docker mode")
 @click.pass_context
 def init(ctx, *args, **kvargs):
     pass
+
 
 @cli.command(short_help="Add a 'Param' to 'spec.json'")
 @click.argument('param_key', nargs=1)
@@ -285,10 +346,11 @@ def param_add(ctx, param_key, param_type):
     data = safe_get_spec_json(ctx)
     param_check(param_key, param_type)
 
-    data['Param'][param_key] = { 'Default' : '', 'Type': param_type }
+    data['Param'][param_key] = {'Default': '', 'Type': param_type}
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
     print_spec_json(data)
+
 
 @cli.command(short_help="Remove a 'Param' from 'spec.json'")
 @click.argument('param_key', nargs=1)
@@ -300,6 +362,7 @@ def param_del(ctx, param_key):
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
     print_spec_json(data)
+
 
 @cli.command(short_help="Add a 'Input' parameter to 'spec.json'")
 @click.argument('input_name', nargs=1)
@@ -314,6 +377,7 @@ def input_add(ctx, input_name, input_types):
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
     print_spec_json(data)
 
+
 @cli.command(short_help="Remove a 'Input' parameter from 'spec.json'")
 @click.argument('input_key', nargs=1)
 @click.pass_context
@@ -324,6 +388,7 @@ def input_del(ctx, input_key):
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
     print_spec_json(data)
+
 
 @cli.command(short_help="Add a 'Output' parameter to 'spec.json'.")
 @click.argument('output_name', nargs=1)
@@ -338,6 +403,7 @@ def output_add(ctx, output_name, output_types):
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
     print_spec_json(data)
 
+
 @cli.command(short_help="Remove a 'Output' parameter from 'spec.json'.")
 @click.argument('output_key', nargs=1)
 @click.pass_context
@@ -349,10 +415,12 @@ def output_del(ctx, output_key):
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
     print_spec_json(data)
 
+
 @cli.command(short_help="Package current module into a tar file.")
 @click.pass_context
 def package(ctx):
     internal_package()
+
 
 @cli.command(short_help="Login to spec_server")
 @click.option('--password', prompt=True, hide_input=True)
@@ -387,12 +455,14 @@ def login(ctx, password):
         click.echo("Failed to login into server:")
         print(r.text)
 
+
 templateType_map = OrderedDict([
     ("none", 0),
     ("hive", 1),
     ("pig", 2),
     ("emr_hive", 3),
     ("emr_pig", 4)])
+
 
 def internal_submit(spec_push_url, ctx, templateType, is_private=False):
     """
@@ -405,16 +475,17 @@ def internal_submit(spec_push_url, ctx, templateType, is_private=False):
         internal_package()
 
     spec_push_params = {
-            "user" : ctx.obj.username,
-            "templateType" : templateType_map[templateType],
-            "private" : is_private}
+        "user": ctx.obj.username,
+        "templateType": templateType_map[templateType],
+        "private": is_private
+    }
 
     cfg = SafeConfigParser()
     cfg.read(os.path.expanduser("~/.screwjack.cfg"))
 
     r = requests.post(spec_push_url,
                       files={'moduletar': open(filename, "rb")},
-                      headers={'x-spec-auth' : cfg.get('user', 'spec_auth')},
+                      headers={'x-spec-auth': cfg.get('user', 'spec_auth')},
                       params=spec_push_params)
 
     if r.status_code != 200:
@@ -428,8 +499,9 @@ def internal_submit(spec_push_url, ctx, templateType, is_private=False):
             print("ERROR : Failed to submit module %s" % filename)
             sys.exit(-2)
         else:
-            print("Sucessful submit module %s" % filename)
+            print("Successful submit module %s" % filename)
             sys.exit(0)
+
 
 @cli.command(short_help="Submit current module to spec_server.")
 @click.option("--templateType", type=click.Choice(templateType_map.keys()), default='none')
@@ -439,12 +511,38 @@ def submit(ctx, templateType, private):
     spec_push_url = "http://%s/spec/push" % ctx.obj.spec_server
     internal_submit(spec_push_url, ctx, templateType, private)
 
+
 @cli.command(short_help="Import current module to spec_server.")
 @click.option("--templateType", type=click.Choice(templateType_map.keys()), default='none')
 @click.pass_context
 def submit_import(ctx, templateType):
     spec_push_url = "http://%s/spec/import" % ctx.obj.spec_server
     internal_submit(spec_push_url, ctx, templateType)
+
+
+def build_zetrt_params(ctx, param_kvs):
+    spec_json = safe_get_spec_json(ctx)
+
+    clusters = ctx.obj.clusters
+
+    def build_val(p, v):
+        import copy
+        p = copy.deepcopy(p)
+        if p["Type"] in ["cluster"]:
+            if not v in clusters:
+                print "Can not find cluster '%s' from ~/.datacanvas.yml" % v
+                ctx.exit(1)
+            
+            p.update(Val=json.dumps(clusters[v]))
+            return p
+        else:
+            p.update(Val=v)
+            return p
+
+    ret = {k: build_val(spec_json["Param"][k], v) for k, v in param_kvs.items()}
+    print ret
+    return ret
+
 
 class RunCLI(click.MultiCommand):
     def list_commands(self, ctx):
@@ -458,19 +556,26 @@ class RunCLI(click.MultiCommand):
         ns = {}
         params = []
 
-        for k,v in spec_json['Param'].iteritems():
-            params.append(click.Option(("--param-%s" % k, ), prompt="Param '%s'"%k, default=v['Default'], type=gettype(v['Type']), help="Param(%s)" % v['Type']))
-        for k,v in spec_json['Input'].iteritems():
-            params.append(click.Option(("--%s" % k, ), prompt="Input '%s'"%k, help="Input"))
-        for k,v in spec_json['Output'].iteritems():
-            params.append(click.Option(("--%s" % k, ), prompt="Output '%s'"%k, help="Output"))
+        for k, v in spec_json['Param'].iteritems():
+            params.append(click.Option(("--param-%s" % k, ), prompt="Param '%s'" % k, default=v['Default'],
+                                       type=gettype(v['Type']), help="Param(%s)" % v['Type']))
+        for k, v in spec_json['Input'].iteritems():
+            params.append(click.Option(("--%s" % k, ), prompt="Input '%s'" % k, help="Input"))
+        for k, v in spec_json['Output'].iteritems():
+            params.append(click.Option(("--%s" % k, ), prompt="Output '%s'" % k, help="Output"))
 
-        def build_zetrt(kwargs, zetrt_dir="."):
-            param = {re.sub(r'^param_(.*)', r'\1', k):{"Type":"string", "Val":v} for k,v in kwargs.viewitems() if re.match(r'^param_(.*)', k)}
+        def build_zetrt(ctx, kwargs, zetrt_dir="."):
+            # TODO: support 'cluster' type
+            params_kv = {re.sub(r'^param_(.*)', r'\1', k): v
+                         for k, v in kwargs.viewitems()
+                         if re.match(r'^param_(.*)', k)}
 
-            obj = { "PARAM" : param, "GLOBAL_PARAM" : gen_dummy_global_param()}
+            obj = {"PARAM": build_zetrt_params(ctx, params_kv), "GLOBAL_PARAM": gen_dummy_global_param()}
             import tempfile
-            zetrt_file = tempfile.NamedTemporaryFile(mode="w+", suffix=".json", prefix="./zetrt_tmp_", dir=zetrt_dir, delete=False)
+
+            zetrt_file = tempfile.NamedTemporaryFile(mode="w+", suffix=".json",
+                                                     prefix="./zetrt_tmp_",
+                                                     dir=zetrt_dir, delete=False)
             zetrt_file.write(json.dumps(obj, indent=4, separators=(',', ': ')))
             zetrt_file.close()
             return zetrt_file
@@ -480,9 +585,9 @@ class RunCLI(click.MultiCommand):
             spec_json = safe_get_spec_json(ctx)
 
             # split params into two groups
-            io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^param_(.*)', k)}
-            io_params_str = " ".join(["%s=%s" % (k,v) for k,v in io_params.viewitems()])
-            zetrt_file = build_zetrt(kwargs)
+            io_params = {k: v for k, v in kwargs.viewitems() if not re.match(r'^param_(.*)', k)}
+            io_params_str = " ".join(["%s=%s" % (k, v) for k, v in io_params.viewitems()])
+            zetrt_file = build_zetrt(ctx, kwargs)
 
             # Build command to execute
             print("Running in local...")
@@ -499,9 +604,9 @@ class RunCLI(click.MultiCommand):
             spec_json = safe_get_spec_json(ctx)
 
             # split params into two groups
-            io_params = {k:v for k,v in kwargs.viewitems() if not re.match(r'^param_(.*)', k)}
+            io_params = {k: v for k, v in kwargs.viewitems() if not re.match(r'^param_(.*)', k)}
             io_vol_str, io_params_str = map_to_dockerpath(io_params)
-            zetrt_file = build_zetrt(kwargs)
+            zetrt_file = build_zetrt(ctx, kwargs)
             zetrt_docker_filename = os.path.join("/home/work/", os.path.relpath(zetrt_file.name))
             module_path = "%s/%s" % (ctx.obj.username, spec_json['Name'].lower())
 
@@ -516,7 +621,8 @@ class RunCLI(click.MultiCommand):
             # Build command to execute
             print("Running in docker...")
             cur_dir = os.path.realpath(os.path.curdir)
-            cmd = "docker run -i -v %s:/home/work/ %s -w=/home/run -e ZETRT=%s -t %s %s %s" % (cur_dir, io_vol_str, zetrt_docker_filename, module_path, spec_json['Cmd'], io_params_str)
+            cmd = "docker run -i -v %s:/home/work/ %s -w=/home/run -e ZETRT=%s -t %s %s %s" % (
+                cur_dir, io_vol_str, zetrt_docker_filename, module_path, spec_json['Cmd'], io_params_str)
             print("Executing : '%s'" % cmd)
 
             ret = os.system(cmd)
@@ -531,20 +637,24 @@ class RunCLI(click.MultiCommand):
         else:
             return None
 
+
 @cli.command(short_help="Print summary of 'spec.json'")
 @click.pass_context
 def show(ctx):
     data = safe_get_spec_json(ctx)
     print_spec_json(data)
 
+
 @cli.command(short_help="Render current 'spec.json' to a graphviz file")
 def draw():
     with open("spec.json", "r") as jf:
         spec_json = json.load(jf)
     from jinja2 import Environment, PackageLoader
+
     jinja2_env = Environment(loader=PackageLoader('screwjack', 'misc_templates'))
     template = jinja2_env.get_template("draw_spec_json.dot.j2")
     print(template.render(spec_json))
+
 
 @cli.command(short_help="Build current image")
 @click.option('--force', is_flag=True, default=False, help='force to rebuild')
@@ -552,9 +662,11 @@ def draw():
 def build(ctx, force):
     internal_build(ctx, force)
 
+
 def internal_build(ctx, force):
     spec_json = safe_get_spec_json(ctx)
     module_path = "%s/%s" % (ctx.obj.username, spec_json['Name'].lower())
+
     def _build():
         if ctx.obj.fast_build:
             build_cmd = 'docker build -t %s .' % module_path
@@ -589,6 +701,7 @@ def internal_build(ctx, force):
     else:
         print("No need for rebuilding.")
 
+
 dsTypeMap = OrderedDict([
     ("local_file", "LocalFile"),
     ("http", "Http"),
@@ -597,15 +710,16 @@ dsTypeMap = OrderedDict([
     ("hdfs", "HDFS"),
     ("hive", "HIVE")])
 
+
 @cli.command(short_help="generate a datasource")
 @click.option("--ds_type", type=click.Choice(dsTypeMap.keys()),
-        default='http', required=True)
+              default='http', required=True)
 @click.option("--ds_name", default='', required=True)
 @click.option("--ds_url", default='', required=True)
 @click.argument('meta_kvs', nargs=-1, required=False)
 @click.pass_context
 def gen_ds(ctx, ds_type, ds_name, ds_url, meta_kvs):
-    metas = {k:v for k,v in [i.split("=") for i in meta_kvs]}
+    metas = {k: v for k, v in [i.split("=") for i in meta_kvs]}
     ds = OrderedDict()
     ds["Name"] = ds_name
     ds["Type"] = dsTypeMap[ds_type]
@@ -613,19 +727,22 @@ def gen_ds(ctx, ds_type, ds_name, ds_url, meta_kvs):
     ds["Meta"] = metas
     print json.dumps(ds, indent=4, separators=(',', ': '))
 
+
 @cli.command(short_help="increase a version")
 @click.pass_context
 def incr_ver(ctx):
     data = safe_get_spec_json(ctx)
     ver = data["Version"].split(".")
-    ver[-1] = str(int(ver[-1])+1)
+    ver[-1] = str(int(ver[-1]) + 1)
     data["Version"] = ".".join(ver)
 
     with open("spec.json", "w") as sj_out:
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
     print_spec_json(data)
 
-meta_defaults = { "isDeterministic" : "true" }
+
+meta_defaults = {"isDeterministic": "true"}
+
 
 @cli.command(short_help="set meta")
 @click.argument('meta_key', nargs=1, type=click.Choice(meta_defaults.keys()))
@@ -645,13 +762,40 @@ def meta_set(ctx, meta_key, meta_val):
         sj_out.write(json.dumps(data, indent=4, separators=(',', ': ')))
     print_spec_json(data)
 
+
+@cli.command(short_help="new clusters")
+@click.pass_context
+def new_cluster(ctx):
+    pass
+
+
+@cli.command(short_help="list clusters")
+@click.pass_context
+def list_clusters(ctx):
+    pass
+
+
+@cli.command(short_help="fetch clusters from datacanvas")
+@click.pass_context
+def fetch_clusters(ctx):
+    pass
+
+
+@cli.command(short_help="publish clusters")
+@click.pass_context
+def push_clusters(ctx):
+    pass
+
+
 @cli.command(cls=RunCLI, short_help="Run module in local/docker mode")
 @click.pass_context
 def run(ctx, *args, **kvargs):
     pass
 
+
 def internal_package():
     import re
+
     files = [i[0][0] for i in [re.findall(r'^ADD (.*) (.*)$', line)
                                for line in open("Dockerfile")]
              if len(i) > 0]
@@ -663,9 +807,11 @@ def internal_package():
 
     print("Packaging files: %s into '%s'" % (files, filename))
     import tarfile
+
     with tarfile.open(filename, "w") as tar:
         for name in files:
             tar.add(name)
+
 
 def files_in_images(img_date):
     for root, dirs, files in os.walk("."):
@@ -675,6 +821,7 @@ def files_in_images(img_date):
             if img_date < file_mtime:
                 # print("%s : %s" % (img_date, file_mtime))
                 yield p
+
 
 def query_yes_no(question, default="yes"):
     """Ask a yes/no question via raw_input() and return their answer.
@@ -686,8 +833,8 @@ def query_yes_no(question, default="yes"):
 
     The "answer" return value is one of "yes" or "no".
     """
-    valid = {"yes":True,   "y":True,  "ye":True,
-             "no":False,   "n":False}
+    valid = {"yes": True, "y": True, "ye": True,
+             "no": False, "n": False}
     if default == None:
         prompt = " [y/n] "
     elif default == "yes":
@@ -705,8 +852,9 @@ def query_yes_no(question, default="yes"):
         elif choice in valid:
             return valid[choice]
         else:
-            sys.stdout.write("Please respond with 'yes' or 'no' "\
+            sys.stdout.write("Please respond with 'yes' or 'no' " \
                              "(or 'y' or 'n').\n")
+
 
 def async_wait_submit(ctx, job_id):
     print("Waiting :'%s'" % job_id)
@@ -715,8 +863,8 @@ def async_wait_submit(ctx, job_id):
         spec_status_url = "http://%s/status" % ctx.obj.spec_server
 
         r = requests.get(spec_status_url,
-                params={"id" : job_id},
-                headers={'x-spec-auth' : cfg.get('user', 'spec_auth')}).json()
+                         params={"id": job_id},
+                         headers={'x-spec-auth': cfg.get('user', 'spec_auth')}).json()
         if r['status'] == 'success':
             return True
         elif r['status'] == 'pending':
@@ -728,9 +876,14 @@ def async_wait_submit(ctx, job_id):
             print("Unknow status : '%s'" % r['status'])
             return False
 
+
+def pprint_json(obj):
+    return json.dumps(obj, sort_keys=True, indent=4, separators=(',', ': '))
+
+
 if __name__ == "__main__":
     if 'DATACANVAS_USERNAME' in os.environ:
-        cli(default_map={'username' : os.environ['DATACANVAS_USERNAME']})
+        cli(default_map={'username': os.environ['DATACANVAS_USERNAME']})
     else:
         cfg = SafeConfigParser()
         cfg.read(os.path.expanduser("~/.screwjack.cfg"))
