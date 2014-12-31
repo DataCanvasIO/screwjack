@@ -508,6 +508,7 @@ def internal_submit(spec_push_url, ctx, templateType, is_private=False):
 @click.option('--private/--public', envvar='DATACANVAS_KEEP_FILES', default=False)
 @click.pass_context
 def submit(ctx, templateType, private):
+    print "Submitting to spec_server : '%s' ..." % ctx.obj.spec_server
     spec_push_url = "http://%s/spec/push" % ctx.obj.spec_server
     internal_submit(spec_push_url, ctx, templateType, private)
 
@@ -516,6 +517,7 @@ def submit(ctx, templateType, private):
 @click.option("--templateType", type=click.Choice(templateType_map.keys()), default='none')
 @click.pass_context
 def submit_import(ctx, templateType):
+    print "Importing to spec_server : '%s' ..." % ctx.obj.spec_server
     spec_push_url = "http://%s/spec/import" % ctx.obj.spec_server
     internal_submit(spec_push_url, ctx, templateType)
 
@@ -864,16 +866,17 @@ def async_wait_submit(ctx, job_id):
 
         r = requests.get(spec_status_url,
                          params={"id": job_id},
-                         headers={'x-spec-auth': cfg.get('user', 'spec_auth')}).json()
-        if r['status'] == 'success':
+                         headers={'x-spec-auth': cfg.get('user', 'spec_auth')})
+        rj = r.json()
+        if rj['status'] == 'success':
             return True
-        elif r['status'] == 'pending':
+        elif rj['status'] == 'pending':
             continue
-        elif r['status'] == 'failed':
-            print("Failed to build : '%s'" % r['message'])
+        elif rj['status'] == 'failed':
+            print("Failed to build : '%s'" % rj['message'])
             return False
         else:
-            print("Unknow status : '%s'" % r['status'])
+            print("Unknow status : '%s'" % rj['status'])
             return False
 
 
