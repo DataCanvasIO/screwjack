@@ -196,6 +196,9 @@ class ZetModule(object):
         import yaml
 
         yaml_path = os.path.join(os.path.expanduser("~/.datacanvas.yml"))
+        if not os.path.isfile(yaml_path):
+            print "WARNING: Can not find '~/.datacanvas.yml'"
+            return {}
         obj = yaml.load(open(yaml_path).read())
         # return {site['Host']: {c['Name']: {p['Name']: p for p in c['Parameters']}
         #                        for c in site['Clusters']}
@@ -534,7 +537,7 @@ def build_zetrt_params(ctx, param_kvs):
             if not v in clusters:
                 print "Can not find cluster '%s' from ~/.datacanvas.yml" % v
                 ctx.exit(1)
-            
+
             p.update(Val=json.dumps(clusters[v]))
             return p
         else:
