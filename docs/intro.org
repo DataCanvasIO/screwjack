@@ -62,7 +62,7 @@ you can do it like this:
 You can get screwjack directly from PyPI:
 
 #+BEGIN_SRC bash
-  pip install -U screwjack
+  pip install -U screwjack pyDataCanvas
 #+END_SRC
 
 ** Setup screwjack

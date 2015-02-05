@@ -172,6 +172,13 @@ environment.
   screwjack run local --param-C=0.1 --X=a.csv --Y=b.csv --MODEL=tmp.model
 #+END_SRC
 
+
+Note, in case you can not import "sklearn.svm", you probably should install scikit-learn locally
+
+#+BEGIN_SRC bash
+  pip install -U scikit-learn
+#+END_SRC
+
 * Step 4.2: Test in *docker*
 
 Then, we can try to execute module by docker:

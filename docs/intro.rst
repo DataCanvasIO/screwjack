@@ -73,7 +73,7 @@ You can get screwjack directly from PyPI:
 
 .. code:: bash
 
-      pip install -U screwjack
+      pip install -U screwjack pyDataCanvas
 
 Setup screwjack
 ---------------
