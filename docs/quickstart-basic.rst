@@ -25,7 +25,7 @@ tutorial, we will use scikit-learn, which are packed in base image
 ::
 
       Module Version [0.1]: 
-      Module Entry Command [/usr/bin/python main.py]: 
+      Module Entry Command [python main.py]: 
       Base Image [zetdata/ubuntu:trusty]: zetdata/sci-python:2.7
       Sucessfully created 'svm'
 
@@ -78,7 +78,7 @@ Now we can add a parameter using the following command:
 
 .. code:: bash
 
-      screwjack param_add C
+      screwjack param_add C float
 
 And, we add two Inputs by the following commands. The first argument
 **X** means the name of the input/output, and the second argument
@@ -95,7 +95,7 @@ Finally, a Output:
 
 .. code:: bash
 
-      screwjack output_add model model.svm
+      screwjack output_add MODEL model.svm
 
 Step 3: Fill your code implementation
 =====================================
@@ -118,6 +118,8 @@ In this tutorial, we would like implement our ``main.py`` like this:
     def main():
         rt = DatacanvasRuntime()
         settings = rt.settings
+
+        # TODO: Add your code here
         X = np.genfromtxt(settings.Input.X, delimiter=',', skip_header=1)
         Y = np.genfromtxt(settings.Input.Y, delimiter=',', skip_header=1)
         svc = LinearSVC(C=float(settings.Param.C))

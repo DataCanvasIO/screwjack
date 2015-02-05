@@ -91,12 +91,12 @@ Or, you can put your username into ``$HOME/.screwjack.cfg``:
 
       [user]
       username = your_username
+      spec_server = playground.datacanvas.io:6006
+      spec_auth = 3ce3e9fc12cf7260c433d2eec44c51ee
 
-Or, you can add ``--username`` option for screwjack like following:
+
+Or, you can use ``login`` subcommand to login into specific spec_server like following:
 
 .. code:: bash
 
-      screwjack --username=your_username init
-      screwjack --username=your_username param_add
-      screwjack --username=your_username input_add
-      screwjack --username=your_username output_add
+      screwjack --username=your_username --spec_server=playground.datacanvas.io:6006 login
