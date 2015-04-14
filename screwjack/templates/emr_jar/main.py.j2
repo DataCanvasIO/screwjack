@@ -1,17 +1,21 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from datacanvas.new_runtime import EmrJarRuntime
 
-def main():
-    ejr = EmrJarRuntime()
+from datacanvas.new_runtime import BasicRuntime, DataCanvas
+dc = DataCanvas(__name__)
+
+
+@dc.hadoop_runtime(spec_json="spec.json")
+def mymodule(rt, params, inputs, outputs):
     jar_step_args = []
 
     # TODO: Execute your jar
     # Method 1 : Execute local jar
-    # ejr.execute("./your_project.jar", jar_step_args)
+    # rt.execute_jar("./your_project.jar", jar_step_args)
     # Method 2 : Execute jar in s3
-    # ejr.execute("s3n://your_bucket/your_project.jar", jar_step_args)
+    # rt.execute_jar("s3n://your_bucket/your_project.jar", jar_step_args)
+
 
 if __name__ == "__main__":
-    main()
+    dc.run()

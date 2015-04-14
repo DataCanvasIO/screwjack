@@ -1,15 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from datacanvas import PigRuntime
+from datacanvas.new_runtime import BasicRuntime, DataCanvas
+dc = DataCanvas(__name__)
 
 
-def main():
-    pr = PigRuntime()
-    print(pr.settings)
-    pr.execute("main.pig")
+@dc.hadoop_runtime(spec_json="spec.json")
+def mymodule(rt, params, inputs, outputs):
+
+    rt.execute_pig_filename("main.pig")
 
     print("Done")
 
+
 if __name__ == "__main__":
-    main()
+    dc.run()
+

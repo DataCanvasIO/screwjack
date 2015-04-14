@@ -1,12 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from datacanvas import EmrHiveRuntime
+
+from datacanvas.new_runtime import GenericHadoopRuntime
+
 
 def main():
-    hr = EmrHiveRuntime()
-    hr.execute("main.hql")
+    ejr = GenericHadoopRuntime()
+
+    ejr.execute_hive_filename("main.hql")
+
     print("Done")
+
 
 if __name__ == "__main__":
     main()
