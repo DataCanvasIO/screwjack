@@ -3,3 +3,4 @@ jinja2>=2.7.2
 requests>=2.2.1
 python-dateutil==2.2
 pytz>=2014.3
+PyYAML>=3.11

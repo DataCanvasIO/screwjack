@@ -207,8 +207,9 @@ class ZetModule(object):
 
     @property
     def clusters(self):
-        spec_server_host = self.spec_server.split(":")[0]
-        return self.clusters_db.get(spec_server_host, None)
+        if self.spec_server:
+            spec_server_host = self.spec_server.split(":")[0]
+            return self.clusters_db.get(spec_server_host, None)
 
 
 base_images = ['zetdata/ubuntu:trusty', 'zetdata/ubuntu:14.04',
