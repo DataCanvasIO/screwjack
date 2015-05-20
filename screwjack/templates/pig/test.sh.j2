@@ -1,0 +1,8 @@
+#!/bin/bash
+
+TEST_CLUSTER="${TEST_CLUSTER:-hdp_cluster}"
+
+# screwjack gen_ds --ds_type hdfs --ds_url hdfs://xxx > input.ds
+
+screwjack run local \
+    --param-cluster $TEST_CLUSTER
