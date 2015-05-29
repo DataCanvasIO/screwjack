@@ -18,6 +18,8 @@ from ConfigParser import SafeConfigParser
 import getpass
 import requests
 from itertools import chain
+import subprocess
+
 
 try:
     import screwjack
@@ -178,12 +180,16 @@ def gen_dummy_global_param(username=None):
 
 
 class ZetModule(object):
-    def __init__(self, username, module_home=None, keep_files=False, fast_build=True, spec_server=None):
+    def __init__(self, username, module_home=None, keep_files=False, fast_build=True,
+                 spec_server=None, dockermachine_env_name=None):
         self.spec_server = spec_server
         self.module_home = os.path.abspath(module_home or '.')
         self.username = username
         self.keep_files = keep_files
         self.fast_build = fast_build
+        self.dockermachine_env_name = dockermachine_env_name
+        if not self.dockermachine_env_name:
+            self.dockermachine_env_name = "dev"
         sj_filename = os.path.join(module_home, "spec.json")
         if not os.path.isfile(sj_filename):
             self.spec_json = None
@@ -210,6 +216,56 @@ class ZetModule(object):
         if self.spec_server:
             spec_server_host = self.spec_server.split(":")[0]
             return self.clusters_db.get(spec_server_host, None)
+
+
+class DockerMachineAgent(object):
+
+    def __init__(self, env_name):
+        self.env_name = env_name
+
+    def ls(self, workingdir):
+        cmd_str = 'docker-machine ssh %s "ls %s"' % (self.env_name, workingdir)
+        print cmd_str
+        ret = subprocess.call(cmd_str, shell=True)
+        return ret == 0
+
+    def mkdir(self, workingdir):
+        cmd_str = 'docker-machine ssh %s "mkdir -p %s"' % (self.env_name, workingdir)
+        print cmd_str
+        ret = subprocess.call(cmd_str, shell=True)
+        return ret == 0
+
+    def rm(self, workingdir):
+        cmd_str = 'docker-machine ssh %s "rm -rf %s"' % (self.env_name, workingdir)
+        print cmd_str
+        ret = subprocess.call(cmd_str, shell=True)
+        return ret == 0
+
+    def cleanup_dir(self, workingdir):
+        return self.rm(workingdir) and self.mkdir(workingdir)
+
+    def get_pwd(self):
+        cmd_str = 'docker-machine ssh %s "pwd"' % self.env_name
+        print cmd_str
+        p = subprocess.Popen(cmd_str, shell=True,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = p.communicate()
+        if p.returncode == 0:
+            return out.strip()
+        else:
+            return None
+
+    def deploy_files(self, filenames, remote_path):
+        p1_cmd = ["tar", "-zcf", "-"] + filenames
+        p2_cmd = ["docker-machine", "ssh", self.env_name, "tar -C %s -zxf -" % remote_path]
+        print "%s | %s" % (" ".join(p1_cmd), " ".join(p2_cmd))
+        p1 = subprocess.Popen(p1_cmd, stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(p2_cmd, stdin=p1.stdout, stdout=subprocess.PIPE)
+        out, err = p2.communicate()
+        # TODO : return p1.returncode == 0 and p2.returncode == 0
+        return p2.returncode == 0
+
+
 
 
 base_images = ['zetdata/ubuntu:trusty', 'zetdata/ubuntu:14.04',
@@ -257,9 +313,10 @@ def get_default_entry_cmd(module_type):
 @click.option('--keep-files/--no-keep-files', envvar='DATACANVAS_KEEP_FILES', default=False)
 @click.option('--fast-build/--full-build', envvar='DATACANVAS_KEEP_FILES', default=True)
 @click.option('--spec_server', envvar='DATACANVAS_SPEC_SERVER', required=False)
+@click.option('--dockermachine_env_name', envvar='DATACANVAS_DM_ENV', required=False)
 @click.pass_context
-def cli(ctx, username, module_home, keep_files, fast_build, spec_server):
-    ctx.obj = ZetModule(username, module_home, keep_files, fast_build, spec_server)
+def cli(ctx, username, module_home, keep_files, fast_build, spec_server, dockermachine_env_name):
+    ctx.obj = ZetModule(username, module_home, keep_files, fast_build, spec_server, dockermachine_env_name)
 
 
 @cli.command(short_help="Show version of Screwjack")
@@ -566,8 +623,9 @@ def build_zetrt_params(ctx, param_kvs):
 
 
 class RunCLI(click.MultiCommand):
+
     def list_commands(self, ctx):
-        rv = ['local', 'docker']
+        rv = ['local', 'docker', 'docker-machine']
         rv.sort()
         return rv
 
@@ -651,10 +709,60 @@ class RunCLI(click.MultiCommand):
                 os.remove(zetrt_file.name)
             sys.exit(ret)
 
+        @click.pass_context
+        def dockermachine_callback(ctx, *args, **kwargs):
+            internal_build(ctx, False)
+            spec_json = safe_get_spec_json(ctx)
+
+            # split params into two groups
+            io_params = {k: v for k, v in kwargs.viewitems() if not re.match(r'^param_(.*)', k)}
+            io_vol_str, io_params_str = map_to_dockerpath(io_params)
+            zetrt_file = build_zetrt(ctx, kwargs)
+            zetrt_docker_filename = os.path.join("/home/work/", os.path.relpath(zetrt_file.name))
+            module_path = "%s/%s" % (ctx.obj.username, spec_json['Name'].lower())
+
+            if not check_docker_image(module_path):
+                print("ERROR : Can not find image, ")
+                print("        please use 'docker build -t %s .'" % module_path)
+                print("        to build your image first.")
+                ctx.exit()
+            else:
+                print("Module '%s' found" % module_path)
+
+            # Build command to execute
+            print("Running in docker-machine...")
+            dm = DockerMachineAgent(env_name=ctx.obj.dockermachine_env_name)
+            remote_home = dm.get_pwd()
+            if not remote_home:
+                print "Invalid home path : %s" % remote_home
+                sys.exit(-1)
+            if dm.cleanup_dir(os.path.join(remote_home, "work")):
+                # local_filename = os.path.basename(zetrt_file.name)
+                root, dirs, local_filenames = next(os.walk("."))
+                remote_filename = os.path.join(remote_home, "work")
+                if not dm.deploy_files(local_filenames, remote_filename):
+                    raise Exception("Failed to deploy local file to remote docker machine")
+
+            # TODO: Overwrite volume mapping path
+            io_vol_str = "-v %s:/zetdata" % os.path.join(remote_home, "work")
+            cur_dir = os.path.join(remote_home, "work")
+
+            cmd = "eval $(docker-machine env %s); docker run -i -v %s:/home/work/ %s -w=/home/run -e ZETRT=%s -t %s %s %s" % (
+                dm.env_name,
+                cur_dir, io_vol_str, zetrt_docker_filename, module_path, spec_json['Cmd'], io_params_str)
+            print("Executing : '%s'" % cmd)
+
+            ret = os.system(cmd)
+            if not ctx.obj.keep_files:
+                os.remove(zetrt_file.name)
+            sys.exit(ret)
+
         if name == "local":
             return click.Command(name, params=params, callback=run_callback)
         elif name == "docker":
             return click.Command(name, params=params, callback=docker_callback)
+        elif name == "docker-machine":
+            return click.Command(name, params=params, callback=dockermachine_callback)
         else:
             return None
 
