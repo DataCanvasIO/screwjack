@@ -17,7 +17,7 @@ from pytz import UTC
 from ConfigParser import SafeConfigParser
 import getpass
 import requests
-
+from itertools import chain
 
 try:
     import screwjack
@@ -140,10 +140,10 @@ def print_spec_json(obj):
         print("  %s(%s) : '%s'" % (k, v['Type'], v['Default']))
     print("Inputs")
     for k, v in obj['Input'].items():
-        print("  %s(%s)" % (k, ",".join(v)))
+        print("  %s(%s)" % (k, ", ".join(v)))
     print("Outputs")
     for k, v in obj['Output'].items():
-        print("  %s(%s)" % (k, ",".join(v)))
+        print("  %s(%s)" % (k, ", ".join(v)))
     if "Meta" in obj:
         print("Meta")
         for k, v in obj['Meta'].items():
@@ -370,12 +370,19 @@ def param_del(ctx, param_key):
 
 
 @cli.command(short_help="Add a 'Input' parameter to 'spec.json'")
+@click.option('--expand-type/--no-expand-type', required=False, default=False)
 @click.argument('input_name', nargs=1)
 @click.argument('input_types', nargs=-1, required=True)
 @click.pass_context
-def input_add(ctx, input_name, input_types):
+def input_add(ctx, expand_type, input_name, input_types):
     data = safe_get_spec_json(ctx)
     inout_check(input_name, input_types, data)
+
+    if expand_type:
+        input_types = list(input_types) + \
+                      list(chain.from_iterable([expand_parent_type(t) for t in input_types]))
+    else:
+        input_types = list(input_types)
 
     data['Input'][input_name] = list(input_types)
     with open("spec.json", "w") as sj_out:
@@ -396,12 +403,19 @@ def input_del(ctx, input_key):
 
 
 @cli.command(short_help="Add a 'Output' parameter to 'spec.json'.")
+@click.option('--expand-type/--no-expand-type', required=False, default=True)
 @click.argument('output_name', nargs=1)
 @click.argument('output_types', nargs=-1, required=True)
 @click.pass_context
-def output_add(ctx, output_name, output_types):
+def output_add(ctx, expand_type, output_name, output_types):
     data = safe_get_spec_json(ctx)
     inout_check(output_name, output_types, data)
+
+    if expand_type:
+        output_types = list(output_types) + \
+                       list(chain.from_iterable([expand_parent_type(t) for t in output_types]))
+    else:
+        output_types = list(output_types)
 
     data['Output'][output_name] = list(output_types)
     with open("spec.json", "w") as sj_out:
@@ -884,6 +898,12 @@ def async_wait_submit(ctx, job_id):
         else:
             print("Unknow status : '%s'" % rj['status'])
             return False
+
+
+def expand_parent_type(src_type):
+    tmp_src_type = src_type.split(".")
+    len_of_src_type = len(tmp_src_type)
+    return [".".join(tmp_src_type[:-i]) for i in range(1, len_of_src_type)]
 
 
 def pprint_json(obj):
