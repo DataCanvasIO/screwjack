@@ -55,9 +55,9 @@ param_type_map = {
     "float": "float",
     "enum": "str",
     "file": "str",
-    "cluster": "str"
+    "cluster": "str",
+    "map":"str"
 }
-
 
 def gettype(name):
     if name not in param_type_map:
@@ -281,7 +281,7 @@ param_types = ['integer', 'enum', 'float', 'string', 'file']
 
 
 def gen_base_image_option(module_type):
-    if module_type == 'basic':
+    if module_type in ['basic','spark']:
         default_base_image = "zetdata/ubuntu:trusty"
     elif module_type == 'hive':
         default_base_image = "zetdata/cdh:new"
@@ -330,7 +330,7 @@ def version(ctx):
 
 class InitCLI(click.MultiCommand):
     def list_commands(self, ctx):
-        rv = ['basic', 'hive', 'pig', 'emr_hive', 'emr_pig', 'emr_jar', 'r']
+        rv = ['basic', 'hive', 'pig', 'emr_hive', 'emr_pig', 'emr_jar', 'r','spark']
         return rv
 
     def get_command(self, ctx, module_type):

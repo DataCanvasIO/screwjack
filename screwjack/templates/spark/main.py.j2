@@ -1,0 +1,15 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from datacanvas.new_runtime import DataCanvas
+dc = DataCanvas(__name__)
+
+
+@dc.spark_jar_runtime(spec_json="spec.json")
+def my_module(rt, params, inputs, outputs):
+    # TODO : Fill your code here
+    print "Done"
+
+
+if __name__ == "__main__":
+    dc.run()
